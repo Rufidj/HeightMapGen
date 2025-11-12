@@ -5,18 +5,18 @@
 #include <vector>
 #include <QImage>
 #include <QEvent>
-#include <QLabel>     // Importante: para que QLabel sea conocido
+#include <QLabel>
 #include <QMouseEvent>
-#include <random>       // Necesario para std::shuffle
-#include <numeric>      // Necesario para std::iota
-#include <chrono>       // Necesario para la semilla de tiempo en initializePerlin
-
-// Definición de tipos de datos C++
-using HeightMapData_t = std::vector<std::vector<unsigned char>>;
+#include <random>
+#include <numeric>
+#include <chrono>
+#include "openglwidget.h"
 
 QT_BEGIN_NAMESPACE
 namespace Ui { class MainWindow; }
 QT_END_NAMESPACE
+
+using HeightMapData_t = std::vector<std::vector<unsigned char>>;
 
 class MainWindow : public QMainWindow
 {
@@ -28,8 +28,6 @@ public:
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
-
-    // Sobrescribir los eventos del ratón para capturar clics
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
@@ -37,43 +35,78 @@ protected:
 private slots:
     void on_pushButtonCreate_clicked();
     void on_pushButtonSave_clicked();
-    void on_pushButtonGenerate_clicked(); // Slot para la generación de Ruido Perlin
+    void on_pushButtonGenerate_clicked();
+    void on_pushButtonView3D_clicked();
 
 private:
     Ui::MainWindow *ui;
+    QLabel *dynamicImageLabel;
 
-    // Puntero para el QLabel que contendrá la imagen del mapa de altura
-    QLabel *dynamicImageLabel = nullptr;
-
-    // Variables de la aplicación
     HeightMapData_t heightMapData;
     QImage currentImage;
     int mapWidth = 0;
     int mapHeight = 0;
     bool isPainting = false;
-    int brushHeight = 128; // Altura a pintar (0-255)
+    int brushHeight = 128;
+    double brushIntensity = 0.3;
+
+    // === BRUSH MODES ===
+    enum BrushMode {
+        RAISE_LOWER,
+        SMOOTH,
+        FLATTEN,
+        NOISE
+    };
+    BrushMode currentBrushMode = RAISE_LOWER;
+    int flattenHeight = 128;
 
     // === PERLIN NOISE VARIABLES ===
-    std::vector<int> p; // Array de permutaciones (512 elementos)
+    std::vector<int> p;
+    int octaves = 6;
+    double persistence = 0.55;
+    double frequencyOffset = 0.0;
+    double frequencyScale = 8.0;
 
-    // === FBM (FRACTAL BROWNIAN MOTION) / OCTAVES VARIABLES ===
-    int octaves = 6;            // Número de capas de ruido. 6 es un buen valor por defecto.
-    double persistence = 0.5;   // La amplitud de cada octava subsiguiente.
-    double frequencyOffset = 1000.0; // Desplazamiento base para cambiar el sector muestreado.
-    double frequencyScale = 8.0; // Nueva variable para controlar el zoom/detalle.
+    // === SIMPLEX NOISE FUNCTIONS ===
+    static constexpr int grad3[12][3] = {
+        {1,1,0}, {-1,1,0}, {1,-1,0}, {-1,-1,0},
+        {1,0,1}, {-1,0,1}, {1,0,-1}, {-1,0,-1},
+        {0,1,1}, {0,-1,1}, {0,1,-1}, {0,-1,-1}
+    };
 
-    // === PERLIN NOISE & FBM FUNCTIONS ===
-    void initializePerlin();
-    double perlin(double x, double y);
-    double fbm(double x, double y); // Nueva función para Octavas Múltiples
-    double fade(double t);
-    double lerp(double t, double a, double b);
-    double grad(int hash, double x, double y, double z);
+    // === UNDO/REDO SYSTEM ===
+    std::vector<HeightMapData_t> undoStack;
+    std::vector<HeightMapData_t> redoStack;
+    int maxUndoSteps = 50;
 
-    // Funciones de utilidad
+    // === 3D VIEW ===
+    OpenGLWidget *glWidget3D = nullptr;
+
+    // === UTILITY FUNCTIONS ===
     void updateHeightmapDisplay();
     QPoint mapToDataCoordinates(int screenX, int screenY);
     void applyBrush(int mapX, int mapY);
+    void applySmoothBrush(int mapX, int mapY);
+    void applyFlattenBrush(int mapX, int mapY);
+    void applyNoiseBrush(int mapX, int mapY);
+
+    // === PERLIN NOISE FUNCTIONS ===
+    void initializePerlin();
+    double fade(double t);
+    double lerp(double t, double a, double b);
+    double grad(int hash, double x, double y, double z);
+    double perlin(double x, double y);
+    double fbm(double x, double y);
+
+    // === SIMPLEX NOISE FUNCTIONS ===
+    double simplexNoise(double x, double y);
+    double simplexFbm(double x, double y);
+
+    // === UNDO/REDO FUNCTIONS ===
+    void saveStateToUndo();
+    void undo();
+    void redo();
+    void clearRedoStack();
 };
 
 #endif // MAINWINDOW_H

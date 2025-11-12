@@ -1,7 +1,11 @@
 #include "mainwindow.h"
 #include "ui_mainwindow.h"
+#include "openglwidget.h"
 #include <QMessageBox>
 #include <QFileDialog>
+#include <QDialog>
+#include <QVBoxLayout>
+#include <QPushButton>
 #include <QPainter>
 #include <cmath>
 #include <algorithm>
@@ -16,43 +20,42 @@
 #include <QScrollArea>
 #include <QLabel>
 #include <QSize>
-#include <random>          // Para std::default_random_engine, std::shuffle
-#include <numeric>         // Para std::iota
-#include <chrono>          // Para la semilla de tiempo
-#include <sstream>         // Para convertir string a double de forma segura
+#include <random>
+#include <numeric>
+#include <chrono>
+#include <sstream>
+#include <QCheckBox>  // AGREGAR ESTA LÍNEA
+#include <QSlider>    // AGREGAR ESTA LÍNEA TAMBIÉN
 
-// =================================================================
-// === 0. CONSTRUCTOR Y DESTRUCTOR
-// =================================================================
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
 {
     ui->setupUi(this);
 
-    // El filtro de eventos se instala en el QScrollArea para capturar clics
     if (ui->scrollAreaDisplay) {
         ui->scrollAreaDisplay->installEventFilter(this);
     }
 
-    // Inicializar variables internas
     isPainting = false;
     mapWidth = 0;
     mapHeight = 0;
     brushHeight = 128;
     dynamicImageLabel = nullptr;
 
-    // Valores por defecto
     ui->lineEditWidth->setText("512");
     ui->lineEditHeight->setText("512");
 
-    // Configuración del slider del pincel
     if (ui->sliderBrushSize) {
         ui->sliderBrushSize->setRange(1, 100);
         ui->sliderBrushSize->setValue(10);
     }
 
-    // Configuración inicial de los nuevos controles de Perlin (FBM)
+    if (ui->sliderBrushIntensity) {
+        ui->sliderBrushIntensity->setRange(1, 100);
+        ui->sliderBrushIntensity->setValue(50);
+    }
+
     if (ui->spinBoxOctaves) {
         ui->spinBoxOctaves->setRange(1, 10);
         ui->spinBoxOctaves->setValue(6);
@@ -62,35 +65,33 @@ MainWindow::MainWindow(QWidget *parent)
         ui->doubleSpinBoxPersistence->setSingleStep(0.05);
         ui->doubleSpinBoxPersistence->setValue(0.55);
     }
-    if (ui->doubleSpinBoxFrequencyScale) { // NUEVO CONTROL
+    if (ui->doubleSpinBoxFrequencyScale) {
         ui->doubleSpinBoxFrequencyScale->setRange(1.0, 50.0);
         ui->doubleSpinBoxFrequencyScale->setSingleStep(0.5);
-        ui->doubleSpinBoxFrequencyScale->setValue(8.0); // 8.0 es el valor de "zoom" por defecto
+        ui->doubleSpinBoxFrequencyScale->setValue(8.0);
         frequencyScale = 8.0;
     }
     if (ui->lineEditOffset) {
-        ui->lineEditOffset->setText("Aleatorio"); // Valor por defecto
+        ui->lineEditOffset->setText("Aleatorio");
     }
 
-    // La inicialización de Perlin (initializePerlin()) ahora se llama
-    // dentro de on_pushButtonGenerate_clicked() para obtener una semilla diferente cada vez.
+    // Conectar botones
+    connect(ui->pushButtonUndo, &QPushButton::clicked, this, &MainWindow::undo);
+    connect(ui->pushButtonRedo, &QPushButton::clicked, this, &MainWindow::redo);
+
 }
 
 MainWindow::~MainWindow()
 {
-    // Asegurarse de eliminar el QLabel dinámico si todavía existe
     if (dynamicImageLabel) {
         delete dynamicImageLabel;
     }
     delete ui;
 }
 
-// =================================================================
-// === 0. FILTRO DE EVENTOS (Captura de clics en el QScrollArea)
-// =================================================================
+
 bool MainWindow::eventFilter(QObject *watched, QEvent *event)
 {
-    // Solo actuamos si el evento ocurrió en el QScrollArea y el QLabel dinámico existe
     if (watched == ui->scrollAreaDisplay && dynamicImageLabel)
     {
         if (event->type() == QEvent::MouseButtonPress) {
@@ -109,16 +110,11 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
     return QMainWindow::eventFilter(watched, event);
 }
 
-
-// =================================================================
-// === 1. CREACIÓN DEL MAPA (CON MANEJO SEGURO DEL QLabel)
-// =================================================================
 void MainWindow::on_pushButtonCreate_clicked()
 {
     int newMapWidth = ui->lineEditWidth->text().toInt();
     int newMapHeight = ui->lineEditHeight->text().toInt();
 
-    // Validación y límites de tamaños
     if (newMapWidth < 16 || newMapHeight < 16 || newMapWidth > 4096 || newMapHeight > 4096) {
         newMapWidth = 512;
         newMapHeight = 512;
@@ -130,11 +126,9 @@ void MainWindow::on_pushButtonCreate_clicked()
     mapWidth = newMapWidth;
     mapHeight = newMapHeight;
 
-    // Inicializar mapa de altura a gris medio (128)
     heightMapData.assign(mapHeight, std::vector<unsigned char>(mapWidth, 128));
     currentImage = QImage(mapWidth, mapHeight, QImage::Format_RGB32);
 
-    // 1. GESTIÓN SEGURA DEL QLabel DINÁMICO
     if (dynamicImageLabel) {
         delete dynamicImageLabel;
         dynamicImageLabel = nullptr;
@@ -144,7 +138,6 @@ void MainWindow::on_pushButtonCreate_clicked()
     dynamicImageLabel->setFixedSize(mapWidth, mapHeight);
     ui->scrollAreaDisplay->setWidget(dynamicImageLabel);
 
-    // 2. CÁLCULO DE TAMAÑO DE LA VENTANA Y SCROLL AREA
     QScreen *screen = QGuiApplication::primaryScreen();
     QRect screenGeometry = screen->availableGeometry();
 
@@ -158,10 +151,8 @@ void MainWindow::on_pushButtonCreate_clicked()
     int scrollAreaWidth = std::min(mapWidth, maxScrollWidth);
     int scrollAreaHeight = std::min(mapHeight, maxScrollHeight);
 
-    // Reposicionar y redimensionar el QScrollArea
     ui->scrollAreaDisplay->setGeometry(180, 20, scrollAreaWidth, scrollAreaHeight);
 
-    // 3. Aplicar el tamaño a la ventana principal
     int requiredWidth = 180 + scrollAreaWidth + 20;
     int requiredHeight = 20 + scrollAreaHeight + 50;
 
@@ -170,23 +161,22 @@ void MainWindow::on_pushButtonCreate_clicked()
     QSize newSize(requiredWidth, requiredHeight);
     this->setFixedSize(newSize);
 
+    // Limpiar historial undo/redo
+    undoStack.clear();
+    redoStack.clear();
+
     updateHeightmapDisplay();
 }
 
-// =================================================================
-// === 2. FUNCIÓN DE TRANSFERENCIA DE DATOS (Matriz a QImage)
-// =================================================================
 void MainWindow::updateHeightmapDisplay()
 {
     if (mapWidth == 0 || mapHeight == 0 || !dynamicImageLabel) return;
 
-    // Convertir datos de altura (0-255) a imagen QImage en escala de grises
     for (int y = 0; y < mapHeight; ++y) {
         QRgb *pixel = reinterpret_cast<QRgb*>(currentImage.scanLine(y));
 
         for (int x = 0; x < mapWidth; ++x) {
             unsigned char value = heightMapData[y][x];
-            // Establecer el color RGB con el mismo valor para escala de grises
             *pixel = qRgb(value, value, value);
             pixel++;
         }
@@ -195,10 +185,6 @@ void MainWindow::updateHeightmapDisplay()
     dynamicImageLabel->setPixmap(QPixmap::fromImage(currentImage));
 }
 
-
-// =================================================================
-// === 3. EXPORTACIÓN A PNG
-// =================================================================
 void MainWindow::on_pushButtonSave_clicked()
 {
     if (mapWidth == 0 || mapHeight == 0 || !dynamicImageLabel) {
@@ -216,9 +202,6 @@ void MainWindow::on_pushButtonSave_clicked()
     }
 }
 
-// =================================================================
-// === 4. LÓGICA DE PINTADO INTERACTIVO
-// =================================================================
 
 QPoint MainWindow::mapToDataCoordinates(int screenX, int screenY)
 {
@@ -246,16 +229,21 @@ void MainWindow::applyBrush(int mapX, int mapY)
     int minY = std::max(0, mapY - brushRadius);
     int maxY = std::min(mapHeight - 1, mapY + brushRadius);
 
+    double intensityFactor = 0.3;
+    if (ui->sliderBrushIntensity) {
+        intensityFactor = ui->sliderBrushIntensity->value() / 100.0;
+    }
+
     for (int y = minY; y <= maxY; ++y) {
         for (int x = minX; x <= maxX; ++x) {
-            double distSq = std::pow(static_cast<double>(x - mapX), 2) + std::pow(static_cast<double>(y - mapY), 2);
+            double distSq = std::pow(static_cast<double>(x - mapX), 2) +
+                            std::pow(static_cast<double>(y - mapY), 2);
 
             if (distSq <= brushRadiusSq) {
                 double intensity = 1.0 - (distSq / brushRadiusSq);
 
                 int currentValue = heightMapData[y][x];
-                // Suavizado exponencial para un pintado gradual
-                int targetValue = static_cast<int>(currentValue + (brushHeight - currentValue) * intensity * 0.05);
+                int targetValue = static_cast<int>(currentValue + (brushHeight - currentValue) * intensity * intensityFactor);
 
                 heightMapData[y][x] = static_cast<unsigned char>(std::min(std::max(targetValue, 0), 255));
             }
@@ -266,23 +254,19 @@ void MainWindow::applyBrush(int mapX, int mapY)
 }
 
 // =================================================================
-// === 5. FUNCIONES DE RUIDO PERLIN (Implementación Estándar)
+// === PERLIN NOISE FUNCTIONS
 // =================================================================
 
 void MainWindow::initializePerlin()
 {
-    // Inicializa el array de permutaciones 'p' (0 a 255) y lo duplica (total 512)
     p.resize(256);
     std::iota(p.begin(), p.end(), 0);
 
-    // Semilla basada en el tiempo para resultados aleatorios en cada ejecución
     unsigned seed = std::chrono::system_clock::now().time_since_epoch().count();
     std::shuffle(p.begin(), p.end(), std::default_random_engine(seed));
 
-    // Duplicar el array para el cálculo de índices (p[i + 256])
     p.insert(p.end(), p.begin(), p.end());
 
-    // Generar un offset aleatorio para el desplazamiento de la frecuencia base
     std::mt19937 gen(std::chrono::system_clock::now().time_since_epoch().count());
     std::uniform_real_distribution<> distrib(100.0, 5000.0);
     frequencyOffset = distrib(gen);
@@ -290,19 +274,16 @@ void MainWindow::initializePerlin()
 
 double MainWindow::fade(double t)
 {
-    // Función de suavizado de Perlin (6t^5 - 15t^4 + 10t^3)
     return t * t * t * (t * (t * 6 - 15) + 10);
 }
 
 double MainWindow::lerp(double t, double a, double b)
 {
-    // Interpolación lineal
     return a + t * (b - a);
 }
 
 double MainWindow::grad(int hash, double x, double y, double z)
 {
-    // Proyección del vector gradiente según el valor del hash
     int h = hash & 15;
     double u = (h < 8) ? x : y;
     double v = (h < 4) ? y : ((h == 12 || h == 14) ? x : z);
@@ -313,51 +294,38 @@ double MainWindow::perlin(double x, double y)
 {
     if (p.empty()) initializePerlin();
 
-    // Coordenadas de la rejilla (índice base)
     int X = (int)std::floor(x);
     int Y = (int)std::floor(y);
 
-    // Coordenadas relativas
     x -= std::floor(x);
     y -= std::floor(y);
-    double z = 0.0; // Fijo para 2D
+    double z = 0.0;
 
-    // Suavizado (Fade)
     double u = fade(x);
     double v = fade(y);
 
-    // Mapeo a la tabla de permutaciones (usando & 255)
     int A = p[(X & 255)] + (Y & 255);
     int B = p[(X + 1) & 255] + (Y & 255);
 
-    // Hash de los 4 puntos de la rejilla. Se usa & 511 para manejar la tabla duplicada.
     int AA = p[A & 511] + 0;
     int AB = p[B & 511] + 0;
     int BA = p[A & 511] + 1;
     int BB = p[B & 511] + 1;
 
-    // Interpolación de gradientes. El resultado está entre -1.0 y 1.0
     return lerp(v, lerp(u, grad(p[AA], x, y, z),
                         grad(p[BA], x - 1, y, z)),
                 lerp(u, grad(p[AB], x, y - 1, z),
                      grad(p[BB], x - 1, y - 1, z)));
 }
 
-// =================================================================
-// === 5.5 FRACTAL BROWNIAN MOTION (FBM) / OCTAVAS MÚLTIPLES
-// =================================================================
 double MainWindow::fbm(double x, double y)
 {
     double total = 0.0;
     double amplitude = 1.0;
     double freq = 1.0;
-    double maxVal = 0.0; // Para normalización
+    double maxVal = 0.0;
 
     for (int i = 0; i < octaves; ++i) {
-        // La frecuencia se dobla en cada octava (lacunarity implícita = 2.0)
-        // La amplitud disminuye en cada octava (persistence)
-
-        // El ruido Perlin da valores entre -1.0 y 1.0
         total += perlin(x * freq, y * freq) * amplitude;
         maxVal += amplitude;
 
@@ -365,14 +333,265 @@ double MainWindow::fbm(double x, double y)
         freq *= 2.0;
     }
 
-    // Normalizar el resultado a [-1.0, 1.0]
     return total / maxVal;
 }
 
+// =================================================================
+// === SIMPLEX NOISE IMPLEMENTATION
+// =================================================================
+
+double MainWindow::simplexNoise(double xin, double yin)
+{
+    if (p.empty()) initializePerlin();
+
+    const double F2 = 0.5 * (std::sqrt(3.0) - 1.0);
+    const double G2 = (3.0 - std::sqrt(3.0)) / 6.0;
+
+    double s = (xin + yin) * F2;
+    int i = std::floor(xin + s);
+    int j = std::floor(yin + s);
+
+    double t = (i + j) * G2;
+    double X0 = i - t;
+    double Y0 = j - t;
+    double x0 = xin - X0;
+    double y0 = yin - Y0;
+
+    int i1, j1;
+    if (x0 > y0) { i1 = 1; j1 = 0; }
+    else { i1 = 0; j1 = 1; }
+
+    double x1 = x0 - i1 + G2;
+    double y1 = y0 - j1 + G2;
+    double x2 = x0 - 1.0 + 2.0 * G2;
+    double y2 = y0 - 1.0 + 2.0 * G2;
+
+    int ii = i & 255;
+    int jj = j & 255;
+    int gi0 = p[ii + p[jj]] % 12;
+    int gi1 = p[ii + i1 + p[jj + j1]] % 12;
+    int gi2 = p[ii + 1 + p[jj + 1]] % 12;
+
+    double n0 = 0.0, n1 = 0.0, n2 = 0.0;
+
+    double t0 = 0.5 - x0*x0 - y0*y0;
+    if (t0 > 0) {
+        t0 *= t0;
+        n0 = t0 * t0 * (grad3[gi0][0]*x0 + grad3[gi0][1]*y0);
+    }
+
+    double t1 = 0.5 - x1*x1 - y1*y1;
+    if (t1 > 0) {
+        t1 *= t1;
+        n1 = t1 * t1 * (grad3[gi1][0]*x1 + grad3[gi1][1]*y1);
+    }
+
+    double t2 = 0.5 - x2*x2 - y2*y2;
+    if (t2 > 0) {
+        t2 *= t2;
+        n2 = t2 * t2 * (grad3[gi2][0]*x2 + grad3[gi2][1]*y2);
+    }
+
+    return 70.0 * (n0 + n1 + n2);
+}
+
+double MainWindow::simplexFbm(double x, double y)
+{
+    double total = 0.0;
+    double amplitude = 1.0;
+    double freq = 1.0;
+    double maxVal = 0.0;
+
+    for (int i = 0; i < octaves; ++i) {
+        total += simplexNoise(x * freq, y * freq) * amplitude;
+        maxVal += amplitude;
+
+        amplitude *= persistence;
+        freq *= 2.0;
+    }
+
+    return total / maxVal;
+}
 
 // =================================================================
-// === 6. GENERACIÓN DEL MAPA DE ALTURA (Botón 'Generar')
+// === ADDITIONAL BRUSH MODES
 // =================================================================
+
+void MainWindow::applySmoothBrush(int mapX, int mapY)
+{
+    if (!ui->sliderBrushSize) return;
+
+    int brushRadius = ui->sliderBrushSize->value();
+    if (brushRadius < 1) brushRadius = 1;
+    double brushRadiusSq = static_cast<double>(brushRadius) * brushRadius;
+
+    if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) return;
+
+    int minX = std::max(0, mapX - brushRadius);
+    int maxX = std::min(mapWidth - 1, mapX + brushRadius);
+    int minY = std::max(0, mapY - brushRadius);
+    int maxY = std::min(mapHeight - 1, mapY + brushRadius);
+
+    // Crear copia temporal para evitar modificar mientras calculamos promedios
+    std::vector<std::vector<unsigned char>> tempData = heightMapData;
+
+    for (int y = minY; y <= maxY; ++y) {
+        for (int x = minX; x <= maxX; ++x) {
+            double distSq = std::pow(static_cast<double>(x - mapX), 2) +
+                            std::pow(static_cast<double>(y - mapY), 2);
+
+            if (distSq <= brushRadiusSq) {
+                int sum = 0;
+                int count = 0;
+                for (int dy = -1; dy <= 1; ++dy) {
+                    for (int dx = -1; dx <= 1; ++dx) {
+                        int nx = x + dx;
+                        int ny = y + dy;
+                        if (nx >= 0 && nx < mapWidth && ny >= 0 && ny < mapHeight) {
+                            sum += tempData[ny][nx];
+                            count++;
+                        }
+                    }
+                }
+                int average = sum / count;
+
+                double intensity = 1.0 - (distSq / brushRadiusSq);
+                int currentValue = tempData[y][x];
+                int newValue = static_cast<int>(currentValue + (average - currentValue) * intensity * 0.3);
+
+                heightMapData[y][x] = static_cast<unsigned char>(std::min(std::max(newValue, 0), 255));
+            }
+        }
+    }
+
+    updateHeightmapDisplay();
+}
+
+void MainWindow::applyFlattenBrush(int mapX, int mapY)
+{
+    if (!ui->sliderBrushSize) return;
+
+    int brushRadius = ui->sliderBrushSize->value();
+    if (brushRadius < 1) brushRadius = 1;
+    double brushRadiusSq = static_cast<double>(brushRadius) * brushRadius;
+
+    if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) return;
+
+    int minX = std::max(0, mapX - brushRadius);
+    int maxX = std::min(mapWidth - 1, mapX + brushRadius);
+    int minY = std::max(0, mapY - brushRadius);
+    int maxY = std::min(mapHeight - 1, mapY + brushRadius);
+
+    for (int y = minY; y <= maxY; ++y) {
+        for (int x = minX; x <= maxX; ++x) {
+            double distSq = std::pow(static_cast<double>(x - mapX), 2) +
+                            std::pow(static_cast<double>(y - mapY), 2);
+
+            if (distSq <= brushRadiusSq) {
+                double intensity = 1.0 - (distSq / brushRadiusSq);
+                int currentValue = heightMapData[y][x];
+
+                int targetValue = static_cast<int>(currentValue + (flattenHeight - currentValue) * intensity * 0.1);
+                heightMapData[y][x] = static_cast<unsigned char>(std::min(std::max(targetValue, 0), 255));
+            }
+        }
+    }
+
+    updateHeightmapDisplay();
+}
+
+void MainWindow::applyNoiseBrush(int mapX, int mapY)
+{
+    if (!ui->sliderBrushSize) return;
+
+    int brushRadius = ui->sliderBrushSize->value();
+    if (brushRadius < 1) brushRadius = 1;
+    double brushRadiusSq = static_cast<double>(brushRadius) * brushRadius;
+
+    if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) return;
+
+    int minX = std::max(0, mapX - brushRadius);
+    int maxX = std::min(mapWidth - 1, mapX + brushRadius);
+    int minY = std::max(0, mapY - brushRadius);
+    int maxY = std::min(mapHeight - 1, mapY + brushRadius);
+
+    if (p.empty()) initializePerlin();
+
+    for (int y = minY; y <= maxY; ++y) {
+        for (int x = minX; x <= maxX; ++x) {
+            double distSq = std::pow(static_cast<double>(x - mapX), 2) +
+                            std::pow(static_cast<double>(y - mapY), 2);
+
+            if (distSq <= brushRadiusSq) {
+                double intensity = 1.0 - (distSq / brushRadiusSq);
+
+                // Generar ruido en esta posición
+                double noiseValue = perlin(x * 0.1, y * 0.1);
+                int noiseHeight = static_cast<int>((noiseValue + 1.0) * 127.5);
+
+                int currentValue = heightMapData[y][x];
+                int targetValue = static_cast<int>(currentValue + (noiseHeight - currentValue) * intensity * 0.15);
+
+                heightMapData[y][x] = static_cast<unsigned char>(std::min(std::max(targetValue, 0), 255));
+            }
+        }
+    }
+
+    updateHeightmapDisplay();
+}
+
+// =================================================================
+// === UNDO/REDO SYSTEM
+// =================================================================
+
+void MainWindow::saveStateToUndo()
+{
+    undoStack.push_back(heightMapData);
+
+    if (undoStack.size() > maxUndoSteps) {
+        undoStack.erase(undoStack.begin());
+    }
+
+    clearRedoStack();
+}
+
+void MainWindow::undo()
+{
+    if (undoStack.empty()) {
+        QMessageBox::information(this, "Deshacer", "No hay acciones para deshacer.");
+        return;
+    }
+
+    redoStack.push_back(heightMapData);
+    heightMapData = undoStack.back();
+    undoStack.pop_back();
+
+    updateHeightmapDisplay();
+}
+
+void MainWindow::redo()
+{
+    if (redoStack.empty()) {
+        QMessageBox::information(this, "Rehacer", "No hay acciones para rehacer.");
+        return;
+    }
+
+    undoStack.push_back(heightMapData);
+    heightMapData = redoStack.back();
+    redoStack.pop_back();
+
+    updateHeightmapDisplay();
+}
+
+void MainWindow::clearRedoStack()
+{
+    redoStack.clear();
+}
+
+// =================================================================
+// === TERRAIN GENERATION
+// =================================================================
+
 void MainWindow::on_pushButtonGenerate_clicked()
 {
     if (mapWidth == 0 || mapHeight == 0) {
@@ -383,84 +602,108 @@ void MainWindow::on_pushButtonGenerate_clicked()
     // 1. OBTENER PARÁMETROS DE LA GUI
     octaves = ui->spinBoxOctaves->value();
     persistence = ui->doubleSpinBoxPersistence->value();
-    frequencyScale = ui->doubleSpinBoxFrequencyScale->value(); // LEER NUEVO CONTROL
+    frequencyScale = ui->doubleSpinBoxFrequencyScale->value();
 
     QString offsetText = ui->lineEditOffset->text();
     if (offsetText.toLower() == "aleatorio" || offsetText.isEmpty()) {
-        initializePerlin(); // Inicializa Perlin y genera un nuevo frequencyOffset aleatorio
+        initializePerlin();
     } else {
-        // Intenta convertir el texto a un número (Semilla/Offset fijo)
         bool ok;
         double customOffset = offsetText.toDouble(&ok);
         if (ok) {
             frequencyOffset = customOffset;
         } else {
-            // Si la conversión falla, usar aleatorio por seguridad
             initializePerlin();
             QMessageBox::warning(this, "Advertencia", "Desplazamiento no válido. Usando valor aleatorio.");
             ui->lineEditOffset->setText(QString::number(frequencyOffset));
         }
-        // Llamar a initializePerlin() para inicializar la tabla 'p' si no se hizo.
         if (p.empty()) initializePerlin();
     }
 
-    // Usamos la dimensión más pequeña para calcular la escala.
     double scale = std::min(mapWidth, mapHeight);
-
-    // Frecuencia base: Ahora usa 'frequencyScale' (ej: 8.0, 4.0, 2.0)
-    // Para mapas más detallados, el divisor (frequencyScale) debe ser más pequeño.
     const double baseFrequency = 1.0 / (scale * frequencyScale);
+
+    // NUEVO: Determinar qué algoritmo usar
+    QString noiseType = ui->comboBoxNoiseType->currentText();
+    bool useSimplex = (noiseType == "Simplex Noise");
 
     for (int y = 0; y < mapHeight; ++y) {
         for (int x = 0; x < mapWidth; ++x) {
-
-            // Coordenadas de muestreo con desplazamiento (frequencyOffset)
             double sampleX = (double)x * baseFrequency + frequencyOffset;
             double sampleY = (double)y * baseFrequency + frequencyOffset;
 
-            // Utilizamos FBM (Octavas Múltiples)
-            double noiseValue = fbm(sampleX, sampleY);
+            double noiseValue;
+            if (useSimplex) {
+                noiseValue = simplexFbm(sampleX, sampleY);
+            } else {
+                noiseValue = fbm(sampleX, sampleY);
+            }
 
-            // Escalar el valor de ruido de [-1.0, 1.0] a [0, 255]
             unsigned char height = (unsigned char)((noiseValue + 1.0) * 127.5);
-
             heightMapData[y][x] = height;
         }
     }
 
     updateHeightmapDisplay();
     QMessageBox::information(this, "Éxito",
-                             QString("Terreno generado con %1 Octavas, %2 de Persistencia y Escala Freq %3.")
-                                 .arg(octaves).arg(persistence).arg(frequencyScale));
+                             QString("Terreno generado con %1.\nOctavas: %2, Persistencia: %3, Escala: %4")
+                                 .arg(noiseType)
+                                 .arg(octaves)
+                                 .arg(persistence)
+                                 .arg(frequencyScale));
 }
 
 // =================================================================
-// === EVENTOS DEL RATÓN (Usando el puntero dinámico)
+// === MOUSE EVENTS
 // =================================================================
 
 void MainWindow::mousePressEvent(QMouseEvent *event)
 {
-    // Solo procesar si hay un mapa y el evento es dentro del QLabel
     if (mapWidth == 0 || mapHeight == 0 || !dynamicImageLabel) return;
 
     QPoint globalPos = event->globalPosition().toPoint();
-
-    // Convertir la posición global a coordenadas locales dentro del dynamicImageLabel
     QPoint localPos = dynamicImageLabel->mapFromGlobal(globalPos);
 
     if (!dynamicImageLabel->rect().contains(localPos)) return;
 
+    saveStateToUndo();
     isPainting = true;
 
-    // Determinar la acción del pincel (pintar arriba o abajo)
-    if (event->button() == Qt::LeftButton) {
-        brushHeight = 180; // Levantar
-    } else if (event->button() == Qt::RightButton) {
-        brushHeight = 80; // Bajar
+    QString brushModeText = ui->comboBoxBrushMode->currentText();
+
+    if (brushModeText == "Suavizar") {
+        currentBrushMode = SMOOTH;
+    } else if (brushModeText == "Aplanar") {
+        currentBrushMode = FLATTEN;
+        QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
+        flattenHeight = heightMapData[dataPos.y()][dataPos.x()];
+    } else if (brushModeText == "Ruido") {
+        currentBrushMode = NOISE;
+    } else {
+        currentBrushMode = RAISE_LOWER;
+        if (event->button() == Qt::LeftButton) {
+            brushHeight = 240;
+        } else if (event->button() == Qt::RightButton) {
+            brushHeight = 20;
+        }
     }
 
     QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
-    applyBrush(dataPos.x(), dataPos.y());
+
+    switch (currentBrushMode) {
+    case RAISE_LOWER:
+        applyBrush(dataPos.x(), dataPos.y());
+        break;
+    case SMOOTH:
+        applySmoothBrush(dataPos.x(), dataPos.y());
+        break;
+    case FLATTEN:
+        applyFlattenBrush(dataPos.x(), dataPos.y());
+        break;
+    case NOISE:
+        applyNoiseBrush(dataPos.x(), dataPos.y());
+        break;
+    }
 }
 
 void MainWindow::mouseMoveEvent(QMouseEvent *event)
@@ -472,11 +715,106 @@ void MainWindow::mouseMoveEvent(QMouseEvent *event)
         if (!dynamicImageLabel->rect().contains(localPos)) return;
 
         QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
-        applyBrush(dataPos.x(), dataPos.y());
+
+        switch (currentBrushMode) {
+        case RAISE_LOWER:
+            applyBrush(dataPos.x(), dataPos.y());
+            break;
+        case SMOOTH:
+            applySmoothBrush(dataPos.x(), dataPos.y());
+            break;
+        case FLATTEN:
+            applyFlattenBrush(dataPos.x(), dataPos.y());
+            break;
+        case NOISE:
+            applyNoiseBrush(dataPos.x(), dataPos.y());
+            break;
+        }
     }
 }
 
 void MainWindow::mouseReleaseEvent(QMouseEvent *event)
 {
     isPainting = false;
+}
+
+// =================================================================
+// === 3D VIEW WINDOW
+// =================================================================
+
+void MainWindow::on_pushButtonView3D_clicked()
+{
+    if (mapWidth == 0 || mapHeight == 0) {
+        QMessageBox::warning(this, "Error", "Cree un mapa primero.");
+        return;
+    }
+
+    // Crear ventana nueva con OpenGL widget
+    QDialog *dialog = new QDialog(this);
+    dialog->setWindowTitle("Vista 3D - HeightMap");
+    dialog->resize(800, 600);
+
+    // Layout principal vertical
+    QVBoxLayout *mainLayout = new QVBoxLayout(dialog);
+
+    // === CONTROLES DE AGUA (Layout horizontal) ===
+    QHBoxLayout *waterControls = new QHBoxLayout();
+
+    // Checkbox para mostrar/ocultar agua
+    QCheckBox *checkShowWater = new QCheckBox("Mostrar Agua", dialog);
+    checkShowWater->setChecked(true);
+
+    // Label y slider para nivel de agua
+    QLabel *labelWaterLevel = new QLabel("Nivel de Agua:", dialog);
+    QSlider *sliderWaterLevel = new QSlider(Qt::Horizontal, dialog);
+    sliderWaterLevel->setRange(0, 100);
+    sliderWaterLevel->setValue(50);
+    sliderWaterLevel->setMinimumWidth(150);
+
+    waterControls->addWidget(checkShowWater);
+    waterControls->addWidget(labelWaterLevel);
+    waterControls->addWidget(sliderWaterLevel);
+    waterControls->addStretch();
+
+    // === BOTÓN DE CARGAR TEXTURA ===
+    QPushButton *btnTexture = new QPushButton("Cargar Textura", dialog);
+    waterControls->addWidget(btnTexture);
+
+    // Agregar controles al layout principal
+    mainLayout->addLayout(waterControls);
+
+    // === WIDGET OPENGL ===
+    OpenGLWidget *glWidget = new OpenGLWidget(dialog);
+    glWidget->setHeightMapData(heightMapData);
+    mainLayout->addWidget(glWidget);
+
+    // === CONEXIONES DE SEÑALES ===
+
+    // Conexión del botón de textura
+    connect(btnTexture, &QPushButton::clicked, [glWidget]() {
+        QString fileName = QFileDialog::getOpenFileName(
+            nullptr,
+            "Seleccionar Textura",
+            "",
+            "Imágenes (*.png *.jpg *.jpeg *.bmp)"
+            );
+
+        if (!fileName.isEmpty()) {
+            glWidget->loadTexture(fileName);
+        }
+    });
+
+    // Conexión del slider de nivel de agua
+    connect(sliderWaterLevel, &QSlider::valueChanged, [glWidget](int value) {
+        glWidget->setWaterLevel(static_cast<float>(value));
+    });
+
+    // Conexión del checkbox de mostrar agua
+    connect(checkShowWater, &QCheckBox::toggled, [glWidget](bool checked) {
+        glWidget->showWater = checked;
+        glWidget->update();
+    });
+
+    dialog->setLayout(mainLayout);
+    dialog->show();
 }
