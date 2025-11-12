@@ -43,32 +43,33 @@ jobs:
         path: build/HeightMapGenerator-Linux-x64.tar.gz  
   
   build-windows:  
-    runs-on: windows-latest  
-      
-    steps:  
-    - uses: actions/checkout@v3  
-      
-    - name: Install Qt  
-      uses: jurplel/install-qt-action@v3  
-      with:  
-        version: '6.9.0'  
-      
-    - name: Configure CMake  
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release  
-      
-    - name: Build  
-      run: cmake --build build --config Release  
-      
-    - name: Package Windows binary  
-      run: |  
-        cd build/Release  
-        Compress-Archive -Path HeightMapGenerator.exe -DestinationPath HeightMapGenerator-Windows-x64.zip  
-      
-    - name: Upload Windows artifact  
-      uses: actions/upload-artifact@v4  
-      with:  
-        name: HeightMapGenerator-Windows  
-        path: build/Release/HeightMapGenerator-Windows-x64.zip  
+  runs-on: windows-latest  
+    
+  steps:  
+  - uses: actions/checkout@v3  
+    
+  - name: Install Qt  
+    uses: jurplel/install-qt-action@v3  
+    with:  
+      version: '6.9.0'  
+      arch: 'win64_msvc2022_64'  
+    
+  - name: Configure CMake  
+    run: cmake -B build -DCMAKE_BUILD_TYPE=Release  
+    
+  - name: Build  
+    run: cmake --build build --config Release  
+    
+  - name: Package Windows binary  
+    run: |  
+      cd build/Release  
+      Compress-Archive -Path HeightMapGenerator.exe -DestinationPath ../HeightMapGenerator-Windows-x64.zip  
+    
+  - name: Upload Windows artifact  
+    uses: actions/upload-artifact@v4  
+    with:  
+      name: HeightMapGenerator-Windows  
+      path: build/HeightMapGenerator-Windows-x64.zip
   
   create-release:  
     needs: [build-linux, build-windows]  
