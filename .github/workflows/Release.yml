@@ -23,13 +23,10 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            ext: tar.gz
             artifact: Linux
           - os: windows-latest
-            ext: zip
             artifact: Windows
           - os: macos-latest
-            ext: tar.gz
             artifact: macOS
 
     steps:
@@ -42,10 +39,6 @@ jobs:
         wget https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
         wget https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
         chmod +x linuxdeploy*.AppImage
-
-    - name: Install zip (Windows only)
-      if: matrix.os == 'windows-latest'
-      run: choco install zip -y
 
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
@@ -69,25 +62,25 @@ jobs:
             ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt
 
             cd AppDir/usr
-            tar -czf ../../${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.${{ matrix.ext }} .
+            tar -czf ../../${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.tar.gz .
             ;;
           macos-latest)
             $QT_ROOT_DIR/bin/macdeployqt build/${{ env.APP_NAME }}.app -verbose=1
-            tar -czf ${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.${{ matrix.ext }} -C build ${{ env.APP_NAME }}.app
+            tar -czf ${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.tar.gz -C build ${{ env.APP_NAME }}.app
             ;;
           windows-latest)
             cd build/Release
             mkdir deploy
             cp ${{ env.APP_NAME }}.exe deploy/
             windeployqt deploy/${{ env.APP_NAME }}.exe --release --no-translations
-            zip -r ../../${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.${{ matrix.ext }} .
+            tar -czf ../../${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.tar.gz -C deploy .
             ;;
         esac
 
     - uses: actions/upload-artifact@v5
       with:
         name: ${{ env.APP_NAME }}-${{ matrix.artifact }}
-        path: ${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.${{ matrix.ext }}
+        path: ${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.tar.gz
 
   release:
     needs: build
