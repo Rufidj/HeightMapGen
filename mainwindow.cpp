@@ -26,11 +26,12 @@
 #include <sstream>
 #include <QCheckBox>  // AGREGAR ESTA LÍNEA
 #include <QSlider>    // AGREGAR ESTA LÍNEA TAMBIÉN
+#include <queue>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
     , ui(new Ui::MainWindow)
-{
+{  // <-- LLAVE DE APERTURA (debe estar aquí)
     ui->setupUi(this);
 
     if (ui->scrollAreaDisplay) {
@@ -75,11 +76,26 @@ MainWindow::MainWindow(QWidget *parent)
         ui->lineEditOffset->setText("Aleatorio");
     }
 
-    // Conectar botones
+    // Inicializar slider de color de relleno
+    if (ui->sliderFillColor) {
+        ui->sliderFillColor->setRange(0, 255);
+        ui->sliderFillColor->setValue(128);
+        fillColor = 128;
+
+        connect(ui->sliderFillColor, &QSlider::valueChanged, this, [this](int value) {
+            fillColor = value;
+            if (ui->labelFillColorPreview) {
+                QString styleSheet = QString("background-color: rgb(%1, %1, %1); border: 1px solid black;").arg(value);
+                ui->labelFillColorPreview->setStyleSheet(styleSheet);
+            }
+        });
+    }  // <-- ASEGÚRATE DE QUE ESTE IF CIERRA CORRECTAMENTE
+
+    // Conectar botones undo/redo - ESTAS LÍNEAS DEBEN ESTAR DENTRO DEL CONSTRUCTOR
     connect(ui->pushButtonUndo, &QPushButton::clicked, this, &MainWindow::undo);
     connect(ui->pushButtonRedo, &QPushButton::clicked, this, &MainWindow::redo);
 
-}
+}  // <-- LLAVE DE CIERRE DEL CONSTRUCTOR (debe estar aquí)
 
 MainWindow::~MainWindow()
 {
@@ -200,6 +216,360 @@ void MainWindow::on_pushButtonSave_clicked()
     } else {
         QMessageBox::critical(this, "Error", "No se pudo guardar el archivo.");
     }
+}
+
+void MainWindow::on_pushButtonLoad_clicked()
+{
+    QString fileName = QFileDialog::getOpenFileName(this,
+                                                    "Cargar Heightmap", "", "PNG Files (*.png)");
+
+    if (fileName.isEmpty()) return;
+
+    QImage loadedImage;
+    if (!loadedImage.load(fileName)) {
+        QMessageBox::critical(this, "Error", "No se pudo cargar el archivo.");
+        return;
+    }
+
+    // Convertir a escala de grises si no lo está
+    loadedImage = loadedImage.convertToFormat(QImage::Format_Grayscale8);
+
+    mapWidth = loadedImage.width();
+    mapHeight = loadedImage.height();
+
+    // Validar dimensiones
+    if (mapWidth < 16 || mapHeight < 16 || mapWidth > 4096 || mapHeight > 4096) {
+        QMessageBox::warning(this, "Error", "Las dimensiones deben estar entre 16 y 4096.");
+        return;
+    }
+
+    // Copiar datos de la imagen a heightMapData
+    heightMapData.assign(mapHeight, std::vector<unsigned char>(mapWidth, 0));
+    for (int y = 0; y < mapHeight; ++y) {
+        const uchar *line = loadedImage.scanLine(y);
+        for (int x = 0; x < mapWidth; ++x) {
+            heightMapData[y][x] = line[x];
+        }
+    }
+
+    currentImage = loadedImage.convertToFormat(QImage::Format_RGB32);
+
+    // Actualizar UI (similar a on_pushButtonCreate_clicked)
+    if (dynamicImageLabel) {
+        delete dynamicImageLabel;
+    }
+    dynamicImageLabel = new QLabel(ui->scrollAreaDisplay);
+    dynamicImageLabel->setFixedSize(mapWidth, mapHeight);
+    ui->scrollAreaDisplay->setWidget(dynamicImageLabel);
+
+    // Limpiar historial
+    undoStack.clear();
+    redoStack.clear();
+    // Crear el label
+    if (dynamicImageLabel) {
+        delete dynamicImageLabel;
+        dynamicImageLabel = nullptr;
+    }
+
+    dynamicImageLabel = new QLabel(ui->scrollAreaDisplay);
+    dynamicImageLabel->setFixedSize(mapWidth, mapHeight);
+    ui->scrollAreaDisplay->setWidget(dynamicImageLabel);
+
+    // AÑADIR ESTE CÓDIGO PARA AJUSTAR LA VENTANA:
+    QScreen *screen = QGuiApplication::primaryScreen();
+    QRect screenGeometry = screen->availableGeometry();
+
+    const int CONTROL_PANEL_WIDTH = 173;
+    const int HORIZONTAL_FRAME_MARGIN = 50;
+    const int VERTICAL_FRAME_MARGIN = 150;
+
+    int maxScrollWidth = screenGeometry.width() - CONTROL_PANEL_WIDTH - HORIZONTAL_FRAME_MARGIN;
+    int maxScrollHeight = screenGeometry.height() - VERTICAL_FRAME_MARGIN;
+
+    int scrollAreaWidth = std::min(mapWidth, maxScrollWidth);
+    int scrollAreaHeight = std::min(mapHeight, maxScrollHeight);
+
+    ui->scrollAreaDisplay->setGeometry(180, 20, scrollAreaWidth, scrollAreaHeight);
+
+    int requiredWidth = 180 + scrollAreaWidth + 20;
+    int requiredHeight = 20 + scrollAreaHeight + 50;
+
+    if (requiredHeight < 300) requiredHeight = 300;
+
+    QSize newSize(requiredWidth, requiredHeight);
+    this->setFixedSize(newSize);
+
+    // Limpiar historial
+    undoStack.clear();
+    redoStack.clear();
+
+    updateHeightmapDisplay();
+    QMessageBox::information(this, "Éxito", "Heightmap cargado correctamente.");
+    updateHeightmapDisplay();
+    QMessageBox::information(this, "Éxito", "Heightmap cargado correctamente.");
+}
+
+void MainWindow::on_pushButtonExport3D_clicked()
+{
+    if (mapWidth == 0 || mapHeight == 0) {
+        QMessageBox::warning(this, "Error", "Cree un mapa primero.");
+        return;
+    }
+
+    // Diálogo con múltiples filtros
+    QString fileName = QFileDialog::getOpenFileName(this,
+                                                    "Importar Modelo 3D",
+                                                    "",
+                                                    "3D Files (*.obj *.OBJ *.stl *.STL);;OBJ Files (*.obj *.OBJ);;STL Files (*.stl *.STL);;All Files (*)");
+
+    if (fileName.isEmpty()) return;
+
+    // Determinar formato por extensión
+    bool isOBJ = fileName.endsWith(".obj", Qt::CaseInsensitive);
+    bool isSTL = fileName.endsWith(".stl", Qt::CaseInsensitive);
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "Error", "No se pudo crear el archivo.");
+        return;
+    }
+
+    QTextStream out(&file);
+
+    if (isOBJ) {
+        // === EXPORTAR OBJ ===
+
+        // Escribir vértices
+        for (int y = 0; y < mapHeight; ++y) {
+            for (int x = 0; x < mapWidth; ++x) {
+                float height = heightMapData[y][x] / 255.0f * 100.0f;
+                out << "v " << x << " " << height << " " << y << "\n";
+            }
+        }
+
+        // Escribir coordenadas de textura
+        for (int y = 0; y < mapHeight; ++y) {
+            for (int x = 0; x < mapWidth; ++x) {
+                out << "vt " << (float)x/mapWidth << " " << (float)y/mapHeight << "\n";
+            }
+        }
+
+        // Escribir caras
+        for (int y = 0; y < mapHeight - 1; ++y) {
+            for (int x = 0; x < mapWidth - 1; ++x) {
+                int topLeft = y * mapWidth + x + 1;
+                int topRight = topLeft + 1;
+                int bottomLeft = (y + 1) * mapWidth + x + 1;
+                int bottomRight = bottomLeft + 1;
+
+                out << "f " << topLeft << "/" << topLeft << " "
+                    << bottomLeft << "/" << bottomLeft << " "
+                    << topRight << "/" << topRight << "\n";
+
+                out << "f " << topRight << "/" << topRight << " "
+                    << bottomLeft << "/" << bottomLeft << " "
+                    << bottomRight << "/" << bottomRight << "\n";
+            }
+        }
+
+    } else if (isSTL) {
+        // === EXPORTAR STL ===
+
+        out << "solid heightmap\n";
+
+        for (int y = 0; y < mapHeight - 1; ++y) {
+            for (int x = 0; x < mapWidth - 1; ++x) {
+                float h1 = heightMapData[y][x] / 255.0f * 100.0f;
+                float h2 = heightMapData[y][x+1] / 255.0f * 100.0f;
+                float h3 = heightMapData[y+1][x] / 255.0f * 100.0f;
+                float h4 = heightMapData[y+1][x+1] / 255.0f * 100.0f;
+
+                // Primer triángulo
+                out << "  facet normal 0 1 0\n";
+                out << "    outer loop\n";
+                out << "      vertex " << x << " " << h1 << " " << y << "\n";
+                out << "      vertex " << x << " " << h3 << " " << (y+1) << "\n";
+                out << "      vertex " << (x+1) << " " << h2 << " " << y << "\n";
+                out << "    endloop\n";
+                out << "  endfacet\n";
+
+                // Segundo triángulo
+                out << "  facet normal 0 1 0\n";
+                out << "    outer loop\n";
+                out << "      vertex " << (x+1) << " " << h2 << " " << y << "\n";
+                out << "      vertex " << x << " " << h3 << " " << (y+1) << "\n";
+                out << "      vertex " << (x+1) << " " << h4 << " " << (y+1) << "\n";
+                out << "    endloop\n";
+                out << "  endfacet\n";
+            }
+        }
+
+        out << "endsolid heightmap\n";
+    }
+
+    file.close();
+
+    QString format = isOBJ ? "OBJ" : "STL";
+    QMessageBox::information(this, "Éxito",
+                             QString("Modelo %1 exportado correctamente.").arg(format));
+}
+
+void MainWindow::on_pushButtonImport3D_clicked()
+{
+    QString fileName = QFileDialog::getOpenFileName(this,
+                                                    "Importar Modelo 3D",
+                                                    "",
+                                                    "3D Files (*.obj *.OBJ *.stl *.STL);;OBJ Files (*.obj *.OBJ);;STL Files (*.stl *.STL)");
+
+    if (fileName.isEmpty()) return;
+
+    bool isOBJ = fileName.endsWith(".obj", Qt::CaseInsensitive);
+    bool isSTL = fileName.endsWith(".stl", Qt::CaseInsensitive);
+
+    if (!isOBJ && !isSTL) {
+        QMessageBox::warning(this, "Error", "Formato no soportado.");
+        return;
+    }
+
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        QMessageBox::critical(this, "Error", "No se pudo abrir el archivo.");
+        return;
+    }
+
+    // Estructuras para almacenar vértices
+    std::vector<float> vertices_x, vertices_y, vertices_z;
+
+    QTextStream in(&file);
+
+    if (isOBJ) {
+        // === PARSEAR OBJ ===
+        while (!in.atEnd()) {
+            QString line = in.readLine().trimmed();
+            if (line.startsWith("v ")) {
+                QStringList parts = line.split(' ', Qt::SkipEmptyParts);
+                if (parts.size() >= 4) {
+                    vertices_x.push_back(parts[1].toFloat());
+                    vertices_y.push_back(parts[2].toFloat());
+                    vertices_z.push_back(parts[3].toFloat());
+                }
+            }
+        }
+    } else if (isSTL) {
+        // === PARSEAR STL ===
+        while (!in.atEnd()) {
+            QString line = in.readLine().trimmed();
+            if (line.startsWith("vertex")) {
+                QStringList parts = line.split(' ', Qt::SkipEmptyParts);
+                if (parts.size() >= 4) {
+                    vertices_x.push_back(parts[1].toFloat());
+                    vertices_y.push_back(parts[2].toFloat());
+                    vertices_z.push_back(parts[3].toFloat());
+                }
+            }
+        }
+    }
+
+    file.close();
+
+    if (vertices_x.empty()) {
+        QMessageBox::warning(this, "Error", "No se encontraron vértices en el archivo.");
+        return;
+    }
+
+    // === CONVERTIR A HEIGHTMAP ===
+
+    // Encontrar límites
+    float minX = *std::min_element(vertices_x.begin(), vertices_x.end());
+    float maxX = *std::max_element(vertices_x.begin(), vertices_x.end());
+    float minZ = *std::min_element(vertices_z.begin(), vertices_z.end());
+    float maxZ = *std::max_element(vertices_z.begin(), vertices_z.end());
+    float minY = *std::min_element(vertices_y.begin(), vertices_y.end());
+    float maxY = *std::max_element(vertices_y.begin(), vertices_y.end());
+
+    // CAMBIO: Usar las dimensiones reales del modelo
+    float rangeX = maxX - minX;
+    float rangeZ = maxZ - minZ;
+
+    // Calcular dimensiones basadas en el rango real
+    // Asumiendo que cada unidad del modelo = 1 píxel en el heightmap
+    int targetWidth = static_cast<int>(std::ceil(rangeX));
+    int targetHeight = static_cast<int>(std::ceil(rangeZ));
+
+    // Validar dimensiones (mantener entre 16 y 4096)
+    if (targetWidth < 16) targetWidth = 16;
+    if (targetHeight < 16) targetHeight = 16;
+    if (targetWidth > 4096) targetWidth = 4096;
+    if (targetHeight > 4096) targetHeight = 4096;
+
+    mapWidth = targetWidth;
+    mapHeight = targetHeight;
+
+    // Inicializar heightmap con valores mínimos
+    heightMapData.assign(mapHeight, std::vector<unsigned char>(mapWidth, 0));
+
+    // Proyectar vértices al heightmap
+    for (size_t i = 0; i < vertices_x.size(); ++i) {
+        // Normalizar coordenadas X,Z al rango del heightmap
+        int x = static_cast<int>((vertices_x[i] - minX) / rangeX * (mapWidth - 1));
+        int z = static_cast<int>((vertices_z[i] - minZ) / rangeZ * (mapHeight - 1));
+
+        // Normalizar altura Y al rango 0-255
+        float normalizedY = (vertices_y[i] - minY) / (maxY - minY);
+        unsigned char heightValue = static_cast<unsigned char>(normalizedY * 255.0f);
+
+        // Tomar el valor máximo si hay múltiples vértices en la misma posición
+        if (x >= 0 && x < mapWidth && z >= 0 && z < mapHeight) {
+            heightMapData[z][x] = std::max(heightMapData[z][x], heightValue);
+        }
+    }
+
+    // === ACTUALIZAR UI ===
+
+    if (dynamicImageLabel) {
+        delete dynamicImageLabel;
+        dynamicImageLabel = nullptr;
+    }
+
+    dynamicImageLabel = new QLabel(ui->scrollAreaDisplay);
+    dynamicImageLabel->setFixedSize(mapWidth, mapHeight);
+    ui->scrollAreaDisplay->setWidget(dynamicImageLabel);
+
+    currentImage = QImage(mapWidth, mapHeight, QImage::Format_RGB32);
+
+    // Ajustar ventana (igual que en la carga de PNG)
+    QScreen *screen = QGuiApplication::primaryScreen();
+    QRect screenGeometry = screen->availableGeometry();
+
+    const int CONTROL_PANEL_WIDTH = 173;
+    const int HORIZONTAL_FRAME_MARGIN = 50;
+    const int VERTICAL_FRAME_MARGIN = 150;
+
+    int maxScrollWidth = screenGeometry.width() - CONTROL_PANEL_WIDTH - HORIZONTAL_FRAME_MARGIN;
+    int maxScrollHeight = screenGeometry.height() - VERTICAL_FRAME_MARGIN;
+
+    int scrollAreaWidth = std::min(mapWidth, maxScrollWidth);
+    int scrollAreaHeight = std::min(mapHeight, maxScrollHeight);
+
+    ui->scrollAreaDisplay->setGeometry(180, 20, scrollAreaWidth, scrollAreaHeight);
+
+    int requiredWidth = 180 + scrollAreaWidth + 20;
+    int requiredHeight = 20 + scrollAreaHeight + 50;
+
+    if (requiredHeight < 300) requiredHeight = 300;
+
+    this->setFixedSize(QSize(requiredWidth, requiredHeight));
+
+    // Limpiar historial
+    undoStack.clear();
+    redoStack.clear();
+
+    updateHeightmapDisplay();
+
+    QString format = isOBJ ? "OBJ" : "STL";
+    QMessageBox::information(this, "Éxito",
+                             QString("Modelo %1 importado correctamente como heightmap %2x%3.")
+                                 .arg(format).arg(mapWidth).arg(mapHeight));
 }
 
 
@@ -651,12 +1021,10 @@ void MainWindow::on_pushButtonGenerate_clicked()
                                  .arg(octaves)
                                  .arg(persistence)
                                  .arg(frequencyScale));
-}
-
+    }
 // =================================================================
 // === MOUSE EVENTS
 // =================================================================
-
 void MainWindow::mousePressEvent(QMouseEvent *event)
 {
     if (mapWidth == 0 || mapHeight == 0 || !dynamicImageLabel) return;
@@ -679,6 +1047,8 @@ void MainWindow::mousePressEvent(QMouseEvent *event)
         flattenHeight = heightMapData[dataPos.y()][dataPos.x()];
     } else if (brushModeText == "Ruido") {
         currentBrushMode = NOISE;
+    } else if (brushModeText == "Rellenar") {  // NUEVO - Añadir este caso
+        currentBrushMode = FILL;
     } else {
         currentBrushMode = RAISE_LOWER;
         if (event->button() == Qt::LeftButton) {
@@ -702,6 +1072,9 @@ void MainWindow::mousePressEvent(QMouseEvent *event)
         break;
     case NOISE:
         applyNoiseBrush(dataPos.x(), dataPos.y());
+        break;
+    case FILL:  // NUEVO - Añadir este caso
+        applyFillBrush(dataPos.x(), dataPos.y());
         break;
     }
 }
@@ -729,6 +1102,9 @@ void MainWindow::mouseMoveEvent(QMouseEvent *event)
         case NOISE:
             applyNoiseBrush(dataPos.x(), dataPos.y());
             break;
+        case FILL:
+            // No hacer nada - el relleno solo se ejecuta en mousePressEvent
+            break;
         }
     }
 }
@@ -741,7 +1117,6 @@ void MainWindow::mouseReleaseEvent(QMouseEvent *event)
 // =================================================================
 // === 3D VIEW WINDOW
 // =================================================================
-
 void MainWindow::on_pushButtonView3D_clicked()
 {
     if (mapWidth == 0 || mapHeight == 0) {
@@ -749,22 +1124,16 @@ void MainWindow::on_pushButtonView3D_clicked()
         return;
     }
 
-    // Crear ventana nueva con OpenGL widget
     QDialog *dialog = new QDialog(this);
     dialog->setWindowTitle("Vista 3D - HeightMap");
     dialog->resize(800, 600);
 
-    // Layout principal vertical
     QVBoxLayout *mainLayout = new QVBoxLayout(dialog);
-
-    // === CONTROLES DE AGUA (Layout horizontal) ===
     QHBoxLayout *waterControls = new QHBoxLayout();
 
-    // Checkbox para mostrar/ocultar agua
     QCheckBox *checkShowWater = new QCheckBox("Mostrar Agua", dialog);
     checkShowWater->setChecked(true);
 
-    // Label y slider para nivel de agua
     QLabel *labelWaterLevel = new QLabel("Nivel de Agua:", dialog);
     QSlider *sliderWaterLevel = new QSlider(Qt::Horizontal, dialog);
     sliderWaterLevel->setRange(0, 100);
@@ -776,25 +1145,24 @@ void MainWindow::on_pushButtonView3D_clicked()
     waterControls->addWidget(sliderWaterLevel);
     waterControls->addStretch();
 
-    // === BOTÓN DE CARGAR TEXTURA ===
-    QPushButton *btnTexture = new QPushButton("Cargar Textura", dialog);
+    QPushButton *btnTexture = new QPushButton("Cargar Textura Terreno", dialog);
     waterControls->addWidget(btnTexture);
 
-    // Agregar controles al layout principal
+    QPushButton *btnWaterTexture = new QPushButton("Cargar Textura Agua", dialog);
+    waterControls->addWidget(btnWaterTexture);
+
     mainLayout->addLayout(waterControls);
 
-    // === WIDGET OPENGL ===
+    // CAMBIAR AQUÍ: Usar un nombre de variable local diferente
     OpenGLWidget *glWidget = new OpenGLWidget(dialog);
     glWidget->setHeightMapData(heightMapData);
     mainLayout->addWidget(glWidget);
 
-    // === CONEXIONES DE SEÑALES ===
-
-    // Conexión del botón de textura
+    // Ahora las lambdas funcionarán correctamente
     connect(btnTexture, &QPushButton::clicked, [glWidget]() {
         QString fileName = QFileDialog::getOpenFileName(
             nullptr,
-            "Seleccionar Textura",
+            "Seleccionar Textura del Terreno",
             "",
             "Imágenes (*.png *.jpg *.jpeg *.bmp)"
             );
@@ -804,12 +1172,23 @@ void MainWindow::on_pushButtonView3D_clicked()
         }
     });
 
-    // Conexión del slider de nivel de agua
+    connect(btnWaterTexture, &QPushButton::clicked, [glWidget]() {
+        QString fileName = QFileDialog::getOpenFileName(
+            nullptr,
+            "Seleccionar Textura del Agua",
+            "",
+            "Imágenes (*.png *.jpg *.jpeg *.bmp)"
+            );
+
+        if (!fileName.isEmpty()) {
+            glWidget->loadWaterTexture(fileName);
+        }
+    });
+
     connect(sliderWaterLevel, &QSlider::valueChanged, [glWidget](int value) {
         glWidget->setWaterLevel(static_cast<float>(value));
     });
 
-    // Conexión del checkbox de mostrar agua
     connect(checkShowWater, &QCheckBox::toggled, [glWidget](bool checked) {
         glWidget->showWater = checked;
         glWidget->update();
@@ -817,4 +1196,51 @@ void MainWindow::on_pushButtonView3D_clicked()
 
     dialog->setLayout(mainLayout);
     dialog->show();
+}
+
+void MainWindow::applyFillBrush(int mapX, int mapY)
+{
+    if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) return;
+
+    // Color original del píxel donde se hizo clic
+    unsigned char targetColor = heightMapData[mapY][mapX];
+
+    // Si el color de relleno es igual al color objetivo, no hacer nada
+    if (targetColor == fillColor) return;
+
+    // Usar una cola para flood fill iterativo (evita stack overflow)
+    std::queue<QPoint> queue;
+    queue.push(QPoint(mapX, mapY));
+
+    // Marcar píxeles visitados para evitar procesarlos múltiples veces
+    std::vector<std::vector<bool>> visited(mapHeight, std::vector<bool>(mapWidth, false));
+
+    while (!queue.empty()) {
+        QPoint current = queue.front();
+        queue.pop();
+
+        int x = current.x();
+        int y = current.y();
+
+        // Verificar límites
+        if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) continue;
+
+        // Si ya visitamos este píxel, saltar
+        if (visited[y][x]) continue;
+
+        // Si el color no coincide con el color objetivo, saltar
+        if (heightMapData[y][x] != targetColor) continue;
+
+        // Marcar como visitado y rellenar
+        visited[y][x] = true;
+        heightMapData[y][x] = static_cast<unsigned char>(fillColor);
+
+        // Añadir píxeles vecinos a la cola (4-conectividad: arriba, abajo, izquierda, derecha)
+        queue.push(QPoint(x, y - 1)); // Arriba
+        queue.push(QPoint(x, y + 1)); // Abajo
+        queue.push(QPoint(x - 1, y)); // Izquierda
+        queue.push(QPoint(x + 1, y)); // Derecha
+    }
+
+    updateHeightmapDisplay();
 }

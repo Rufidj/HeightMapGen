@@ -1,0 +1,9 @@
+<!DOCTYPE RCC>  
+<RCC version="1.0">  
+    <qresource>  
+        <file>shaders/terrain.vert</file>  
+        <file>shaders/terrain.frag</file>  
+        <file>shaders/water.vert</file>  
+        <file>shaders/water.frag</file>  
+    </qresource>  
+</RCC>

@@ -35,8 +35,12 @@ protected:
 private slots:
     void on_pushButtonCreate_clicked();
     void on_pushButtonSave_clicked();
+    void on_pushButtonLoad_clicked();
     void on_pushButtonGenerate_clicked();
     void on_pushButtonView3D_clicked();
+    void on_pushButtonExport3D_clicked();
+    void on_pushButtonImport3D_clicked();
+    void applyFillBrush(int mapX, int mapY);
 
 private:
     Ui::MainWindow *ui;
@@ -47,6 +51,7 @@ private:
     int mapWidth = 0;
     int mapHeight = 0;
     bool isPainting = false;
+    int fillColor = 128;  // Color de relleno (0-255
     int brushHeight = 128;
     double brushIntensity = 0.3;
 
@@ -55,7 +60,8 @@ private:
         RAISE_LOWER,
         SMOOTH,
         FLATTEN,
-        NOISE
+        NOISE,
+        FILL
     };
     BrushMode currentBrushMode = RAISE_LOWER;
     int flattenHeight = 128;

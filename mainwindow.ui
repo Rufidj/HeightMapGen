@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>658</width>
-    <height>650</height>
+    <height>751</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -17,8 +17,8 @@
    <widget class="QLabel" name="label">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>125</y>
+      <x>0</x>
+      <y>220</y>
       <width>121</width>
       <height>21</height>
      </rect>
@@ -69,8 +69,8 @@
    <widget class="QLineEdit" name="lineEditWidth">
     <property name="geometry">
      <rect>
-      <x>60</x>
-      <y>150</y>
+      <x>50</x>
+      <y>245</y>
       <width>113</width>
       <height>22</height>
      </rect>
@@ -79,8 +79,8 @@
    <widget class="QLineEdit" name="lineEditHeight">
     <property name="geometry">
      <rect>
-      <x>60</x>
-      <y>180</y>
+      <x>50</x>
+      <y>275</y>
       <width>113</width>
       <height>22</height>
      </rect>
@@ -89,8 +89,8 @@
    <widget class="QLabel" name="label_3">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>150</y>
+      <x>0</x>
+      <y>245</y>
       <width>58</width>
       <height>15</height>
      </rect>
@@ -102,8 +102,8 @@
    <widget class="QLabel" name="label_4">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>180</y>
+      <x>0</x>
+      <y>275</y>
       <width>58</width>
       <height>15</height>
      </rect>
@@ -139,7 +139,7 @@
     <property name="geometry">
      <rect>
       <x>10</x>
-      <y>90</y>
+      <y>120</y>
       <width>121</width>
       <height>23</height>
      </rect>
@@ -151,8 +151,8 @@
    <widget class="QLabel" name="label_6">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>210</y>
+      <x>0</x>
+      <y>305</y>
       <width>201</width>
       <height>16</height>
      </rect>
@@ -164,8 +164,8 @@
    <widget class="QFrame" name="frame">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>230</y>
+      <x>0</x>
+      <y>325</y>
       <width>161</width>
       <height>151</height>
      </rect>
@@ -305,10 +305,10 @@
    <widget class="QFrame" name="frame_2">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>420</y>
+      <x>0</x>
+      <y>510</y>
       <width>161</width>
-      <height>141</height>
+      <height>191</height>
      </rect>
     </property>
     <property name="frameShape">
@@ -385,6 +385,11 @@
        <string>Ruido</string>
       </property>
      </item>
+     <item>
+      <property name="text">
+       <string>Rellenar</string>
+      </property>
+     </item>
     </widget>
     <widget class="QLabel" name="label_14">
      <property name="geometry">
@@ -415,12 +420,51 @@
       <enum>Qt::Orientation::Horizontal</enum>
      </property>
     </widget>
+    <widget class="QSlider" name="sliderFillColor">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>150</y>
+       <width>131</width>
+       <height>16</height>
+      </rect>
+     </property>
+     <property name="orientation">
+      <enum>Qt::Orientation::Horizontal</enum>
+     </property>
+    </widget>
+    <widget class="QLabel" name="labelFillColorPreview">
+     <property name="geometry">
+      <rect>
+       <x>30</x>
+       <y>170</y>
+       <width>91</width>
+       <height>16</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string/>
+     </property>
+    </widget>
+    <widget class="QLabel" name="label_15">
+     <property name="geometry">
+      <rect>
+       <x>10</x>
+       <y>130</y>
+       <width>101</width>
+       <height>16</height>
+      </rect>
+     </property>
+     <property name="text">
+      <string>Color del Pincel</string>
+     </property>
+    </widget>
    </widget>
    <widget class="QLabel" name="label_11">
     <property name="geometry">
      <rect>
-      <x>10</x>
-      <y>395</y>
+      <x>0</x>
+      <y>490</y>
       <width>101</width>
       <height>20</height>
      </rect>
@@ -466,6 +510,45 @@
     </property>
     <property name="text">
      <string>Preview 3D</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButtonLoad">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>90</y>
+      <width>121</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Cargar Heighmap</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButtonImport3D">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>150</y>
+      <width>121</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Importar</string>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="pushButtonExport3D">
+    <property name="geometry">
+     <rect>
+      <x>10</x>
+      <y>180</y>
+      <width>121</width>
+      <height>23</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Exportar</string>
     </property>
    </widget>
   </widget>
