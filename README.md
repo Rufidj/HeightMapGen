@@ -4,4 +4,6 @@
 
 # HeightMapGen
 
-Heightmap Editor and Generator
+HeightMapGenerator is a desktop application for creating and editing procedural heightmaps using Perlin noise and Fractal Brownian Motion (FBM) algorithms.
+
+The application provides an interactive GUI for generating terrain data, editing it with a brush tool, and exporting results as PNG images.
