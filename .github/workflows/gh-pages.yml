@@ -1,0 +1,65 @@
+name: Build & Deploy (WASM)
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+env:
+  APP_NAME: "HeightMapGenerator"
+  QT_VERSION: "6.9.0"
+  BUILD_DIR: "build-wasm"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Install Qt for WebAssembly
+      uses: jurplel/install-qt-action@v4
+      with:
+        version: ${{ env.QT_VERSION }}
+        modules: qtbase
+        host: linux
+        target: wasm_32
+
+    - name: Configure and Build (Emscripten)
+      run: |
+        mkdir -p ${{ env.BUILD_DIR }}
+        cd ${{ env.BUILD_DIR }}
+        cmake .. -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$QT_ROOT_DIR/lib/cmake/Qt6/qt.toolchain.cmake
+        cmake --build . --parallel
+
+    - name: Prepare WebAssembly output
+      run: |
+        mkdir site
+        cp ${{ env.BUILD_DIR }}/${{ env.APP_NAME }}.wasm site/
+        cp ${{ env.BUILD_DIR }}/${{ env.APP_NAME }}.html site/
+        cp ${{ env.BUILD_DIR }}/${{ env.APP_NAME }}.js site/
+        # Optional: add an index.html if Qt does not generate one
+        if [ ! -f site/index.html ]; then
+          echo "<meta http-equiv='refresh' content='0; URL=${{ env.APP_NAME }}.html'>" > site/index.html
+        fi
+
+    - name: Upload site artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: site
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+    - name: Deploy to GitHub Pages
+      id: deployment
+      uses: actions/deploy-pages@v4
