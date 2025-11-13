@@ -22,6 +22,17 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
+    - name: Install Emscripten SDK
+      run: |
+        git clone https://github.com/emscripten-core/emsdk.git
+        cd emsdk
+        ./emsdk install latest
+        ./emsdk activate latest
+
+        echo "EMSDK=$PWD" >> $GITHUB_ENV
+        echo "EMSCRIPTEN=$PWD/upstream/emscripten" >> $GITHUB_ENV
+        echo "source $PWD/emsdk_env.sh" >> $GITHUB_ENV
+
     - name: Install Qt for WebAssembly
       uses: jurplel/install-qt-action@v4
       with:
@@ -32,7 +43,13 @@ jobs:
 
     - name: Configure and Build (Emscripten)
       run: |
-        cmake -B${{ env.BUILD_DIR }} -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=$QT_ROOT_DIR/lib/cmake/Qt6/qt.toolchain.cmake
+        source $GITHUB_ENV
+
+        cmake -B${{ env.BUILD_DIR }} \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_TOOLCHAIN_FILE=$QT_ROOT_DIR/lib/cmake/Qt6/qt.toolchain.cmake \
+        -DQT_CHAINLOAD_TOOLCHAIN_FILE=$EMSCRIPTEN/cmake/Modules/Platform/Emscripten.cmake
+        
         cmake --build ${{ env.BUILD_DIR }} --parallel
 
     - name: Prepare WebAssembly output
