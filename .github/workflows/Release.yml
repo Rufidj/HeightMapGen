@@ -14,6 +14,7 @@ permissions:
 env:
   APP_NAME: "HeightMapGenerator"
   QT_VERSION: "6.9.0"
+  BUILD_TYPE: "Release"
 
 jobs:
   build:
@@ -49,8 +50,8 @@ jobs:
 
     - name: Configure and Build
       run: |
-        cmake -B build -DCMAKE_BUILD_TYPE=Release
-        cmake --build build --config Release
+        cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        cmake --build build --config ${{ env.BUILD_TYPE }}
 
     - name: Package binary
       shell: bash
