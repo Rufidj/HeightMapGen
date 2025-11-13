@@ -39,12 +39,11 @@ jobs:
 
     - name: Configure and Build (Emscripten)
       run: |
-        source $GITHUB_ENV
 
         cmake -B${{ env.BUILD_DIR }} \
         -DCMAKE_BUILD_TYPE=Release \
         -DCMAKE_TOOLCHAIN_FILE=$QT_ROOT_DIR/lib/cmake/Qt6/qt.toolchain.cmake \
-        -DQT_CHAINLOAD_TOOLCHAIN_FILE=$EMSCRIPTEN/cmake/Modules/Platform/Emscripten.cmake
+        -DQT_CHAINLOAD_TOOLCHAIN_FILE=$EMSDK/cmake/Modules/Platform/Emscripten.cmake
 
         cmake --build ${{ env.BUILD_DIR }} --parallel
 
