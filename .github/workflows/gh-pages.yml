@@ -22,17 +22,12 @@ jobs:
     steps:
     - uses: actions/checkout@v5
 
-    - name: Install Emscripten SDK
-      run: |
-        git clone https://github.com/emscripten-core/emsdk.git
-        cd emsdk
-        ./emsdk install latest
-        ./emsdk activate latest
-
-        # Export environment variables directly into GitHub Actions
-        ./emsdk_env.sh --build=release > emscripten_env.sh
-
-        grep "^export" emscripten_env.sh >> $GITHUB_ENV
+    - name: Setup emsdk
+      uses: mymindstorm/setup-emsdk@v14
+      with:
+        version: 4.0.19
+    - name: Verify
+      run: emcc -v        
 
     - name: Install Qt for WebAssembly
       uses: jurplel/install-qt-action@v4
