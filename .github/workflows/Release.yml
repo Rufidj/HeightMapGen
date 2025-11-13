@@ -2,7 +2,6 @@ name: Build & Release
 
 on:
   push:
-    branches: [ main, master ]
     tags:
       - 'v*'
   pull_request:
@@ -15,101 +14,78 @@ permissions:
 env:
   APP_NAME: "HeightMapGenerator"
   QT_VERSION: "6.9.0"
-  BUILD_TYPE: "Release"
 
 jobs:
   build:
-    name: Build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         include:
           - os: ubuntu-latest
+            ext: tar.gz
             artifact: Linux
-            qt_host: linux
-            qt_arch: gcc_64
           - os: windows-latest
+            ext: zip
             artifact: Windows
-            qt_host: windows
-            qt_arch: win64_msvc2022_64
           - os: macos-latest
+            ext: tar.gz
             artifact: macOS
-            qt_host: mac
-            qt_arch: clang_64
 
     steps:
     - uses: actions/checkout@v5
 
     - name: Install dependencies (Linux only)
       if: matrix.os == 'ubuntu-latest'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev libxcb-cursor0 patchelf
+      run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev libglu1-mesa-dev libxcb-cursor0
 
     - name: Install Qt
       uses: jurplel/install-qt-action@v4
       with:
         version: ${{ env.QT_VERSION }}
-        host: ${{ matrix.qt_host }}
-        arch: ${{ matrix.qt_arch }}
 
-    - name: Configure CMake
-      run: cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
-
-    - name: Build
-      run: cmake --build build --config ${{ env.BUILD_TYPE }}
-
-    - name: Package App
+    - name: Configure and Build
       run: |
-        if [[ "${{ matrix.os }}" == "ubuntu-latest" ]]; then
-          wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
-          wget -q https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-x86_64.AppImage
-          chmod +x linuxdeploy*.AppImage
-          mkdir -p AppDir/usr/bin
-          cp build/${{ env.APP_NAME }} AppDir/usr/bin/
-          ./linuxdeploy-x86_64.AppImage --appdir AppDir --plugin qt
-          (cd AppDir/usr && tar -czf ../../${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.tar.gz .)
-        elif [[ "${{ matrix.os }}" == "macos-latest" ]]; then
-          MACDEPLOYQT=$(find $Qt6_DIR -type f -name macdeployqt | head -n 1)
-          "$MACDEPLOYQT" build/${{ env.APP_NAME }}.app -verbose=1
-          tar -czf ${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.tar.gz -C build ${{ env.APP_NAME }}.app
-        else
-          cd build/Release
-          mkdir deploy
-          cp ${{ env.APP_NAME }}.exe deploy/
-          windeployqt deploy/${{ env.APP_NAME }}.exe --release --no-translations
-          Compress-Archive -Path deploy/* -DestinationPath ../../${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.zip
-        fi
-      shell: bash
+        cmake -B build -DCMAKE_BUILD_TYPE=Release
+        cmake --build build --config Release
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v5
+    - name: Package binary
+      shell: bash
+      run: |
+        case "${{ matrix.os }}" in
+          ubuntu-latest)
+            tar -czf ${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.${{ matrix.ext }} -C build ${{ env.APP_NAME }}
+            ;;
+          macos-latest)
+            /Users/runner/work/Qt/${{ env.QT_VERSION }}/macos/bin/macdeployqt build/${{ env.APP_NAME }}.app -verbose=1
+            tar -czf ${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.${{ matrix.ext }} -C build ${{ env.APP_NAME }}.app
+            ;;
+          windows-latest)
+            cd build/Release
+            mkdir deploy
+            cp ${{ env.APP_NAME }}.exe deploy/
+            windeployqt deploy/${{ env.APP_NAME }}.exe --release --no-translations
+            Compress-Archive -Path deploy/* -DestinationPath ../../${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.${{ matrix.ext }}
+            ;;
+        esac
+
+    - uses: actions/upload-artifact@v5
       with:
         name: ${{ env.APP_NAME }}-${{ matrix.artifact }}
-        path: |
-          ${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.tar.gz
-          ${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.zip
+        path: ${{ env.APP_NAME }}-${{ matrix.artifact }}-x64.${{ matrix.ext }}
 
   release:
-    name: Create GitHub Release
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
-    - name: Download all artifacts
-      uses: actions/download-artifact@v6
+    - uses: actions/download-artifact@v6
 
     - name: Create GitHub Release
       uses: softprops/action-gh-release@v2
       with:
         name: Release ${{ github.ref_name }}
         tag_name: ${{ github.ref_name }}
-        files: |
-          */${{ env.APP_NAME }}-Linux-x64.tar.gz
-          */${{ env.APP_NAME }}-Windows-x64.zip
-          */${{ env.APP_NAME }}-macOS-x64.tar.gz
-        draft: false
-        prerelease: false
+        files: '**/*'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
