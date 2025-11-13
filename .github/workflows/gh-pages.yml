@@ -28,7 +28,7 @@ jobs:
         version: ${{ env.QT_VERSION }}
         modules: qtbase
         host: linux
-        target: wasm_32
+        target: wasm
 
     - name: Configure and Build (Emscripten)
       run: |
