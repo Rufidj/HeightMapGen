@@ -1,4 +1,4 @@
-name: Build HeightMapGenerator
+name: Build
 
 on:
   push:
