@@ -111,12 +111,13 @@ jobs:
     - name: Build
       run: cmake --build build --config Release
 
+    - name: Bundle Qt with macdeployqt
+      run: |
+        $Qt6_DIR/bin/macdeployqt build/HeightMapGenerator.app -verbose=2
+
     - name: Package macOS binary
       run: |
-        mkdir -p HeightMapGenerator-macos
-        cp -R build/HeightMapGenerator.app HeightMapGenerator-macos/
-        cd HeightMapGenerator-macos
-        tar -czf ../HeightMapGenerator-macos-x64.tar.gz .
+        tar -czf HeightMapGenerator-macos-x64.tar.gz -C build HeightMapGenerator.app
 
     - name: Upload macOS artifact
       uses: actions/upload-artifact@v5
