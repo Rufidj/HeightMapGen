@@ -58,6 +58,9 @@ jobs:
         cp ${{ env.BUILD_DIR }}/${{ env.APP_NAME }}.html site/
         cp ${{ env.BUILD_DIR }}/${{ env.APP_NAME }}.js site/
 
+        # List Qt WebAssembly files (for debugging)
+        find "${{ env.QT_ROOT_DIR }}" -name "*.js"
+
         # Copy Qt WebAssembly runtime files
         cp "${{ env.QT_ROOT_DIR }}/plugins/platforms/qtloader.js" site/
         # Optional: other runtime JS files if needed
