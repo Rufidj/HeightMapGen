@@ -229,7 +229,6 @@ MainWindow::MainWindow(QWidget *parent)
     QAction *toolActionTexturize = mainToolBar->addAction(QIcon::fromTheme("applications-graphics"), "Texturizar");
     toolActionTexturize->setToolTip("Pintar texturas en el mapa 3D");
     connect(toolActionTexturize, &QAction::triggered, this, &MainWindow::on_pushButtonTexturize_clicked);
-
 }  // <-- LLAVE DE CIERRE DEL CONSTRUCTOR (debe estar aquí)
 
 MainWindow::~MainWindow()
@@ -1430,61 +1429,131 @@ void MainWindow::on_pushButtonGenerate_clicked()
                                  .arg(octaves)
                                  .arg(persistence)
                                  .arg(frequencyScale));
-    }
+}
 // =================================================================
 // === MOUSE EVENTS
 // =================================================================
-    void MainWindow::mousePressEvent(QMouseEvent *event)
-    {
-        if (mapWidth == 0 || mapHeight == 0 || !dynamicImageLabel) return;
+void MainWindow::mousePressEvent(QMouseEvent *event)
+{
+    if (mapWidth == 0 || mapHeight == 0 || !dynamicImageLabel) return;
 
-        QPoint globalPos = event->globalPosition().toPoint();
-        QPoint localPos = dynamicImageLabel->mapFromGlobal(globalPos);
+    QPoint globalPos = event->globalPosition().toPoint();
+    QPoint localPos = dynamicImageLabel->mapFromGlobal(globalPos);
 
-        if (!dynamicImageLabel->rect().contains(localPos)) return;
+    if (!dynamicImageLabel->rect().contains(localPos)) return;
 
-        saveStateToUndo();
-        isPainting = true;
+    saveStateToUndo();
+    isPainting = true;
 
-        QString brushModeText = ui->comboBoxBrushMode->currentText();
-        qDebug() << "Modo seleccionado:" << brushModeText;  // DEBUG
-        // IMPORTANTE: Los casos de geometría deben ir ANTES del else
-        if (brushModeText == "Línea") {
-            currentBrushMode = LINE;
-            QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
-            shapeStartPoint = dataPos;
-            isDrawingShape = true;
-            previewImage = currentImage.copy();
-            return;  // CRÍTICO: salir aquí
-        } else if (brushModeText == "Rectángulo") {
-            currentBrushMode = RECTANGLE;
-            QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
-            shapeStartPoint = dataPos;
-            isDrawingShape = true;
-            previewImage = currentImage.copy();
-            return;  // CRÍTICO: salir aquí
-        } else if (brushModeText == "Círculo") {
-            currentBrushMode = CIRCLE;
-            QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
-            shapeStartPoint = dataPos;
-            isDrawingShape = true;
-            previewImage = currentImage.copy();
-            return;  // CRÍTICO: salir aquí
-        } else if (brushModeText == "Suavizar") {
-            currentBrushMode = SMOOTH;
-        } else if (brushModeText == "Aplanar") {
-            currentBrushMode = FLATTEN;
-            QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
-            flattenHeight = heightMapData[dataPos.y()][dataPos.x()];
-        } else if (brushModeText == "Ruido") {
-            currentBrushMode = NOISE;
-        } else if (brushModeText == "Rellenar") {
-            currentBrushMode = FILL;
-        } else {
-            currentBrushMode = RAISE_LOWER;
-            brushHeight = brushColor;
+    QString brushModeText = ui->comboBoxBrushMode->currentText();
+    qDebug() << "Modo seleccionado:" << brushModeText;  // DEBUG
+    // IMPORTANTE: Los casos de geometría deben ir ANTES del else
+    if (brushModeText == "Línea") {
+        currentBrushMode = LINE;
+        QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
+        shapeStartPoint = dataPos;
+        isDrawingShape = true;
+        previewImage = currentImage.copy();
+        return;  // CRÍTICO: salir aquí
+    } else if (brushModeText == "Rectángulo") {
+        currentBrushMode = RECTANGLE;
+        QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
+        shapeStartPoint = dataPos;
+        isDrawingShape = true;
+        previewImage = currentImage.copy();
+        return;  // CRÍTICO: salir aquí
+    } else if (brushModeText == "Círculo") {
+        currentBrushMode = CIRCLE;
+        QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
+        shapeStartPoint = dataPos;
+        isDrawingShape = true;
+        previewImage = currentImage.copy();
+        return;  // CRÍTICO: salir aquí
+    } else if (brushModeText == "Suavizar") {
+        currentBrushMode = SMOOTH;
+    } else if (brushModeText == "Aplanar") {
+        currentBrushMode = FLATTEN;
+        QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
+        flattenHeight = heightMapData[dataPos.y()][dataPos.x()];
+    } else if (brushModeText == "Ruido") {
+        currentBrushMode = NOISE;
+    } else if (brushModeText == "Rellenar") {
+        currentBrushMode = FILL;
+    } else {
+        currentBrushMode = RAISE_LOWER;
+        brushHeight = brushColor;
+    }
+
+    QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
+
+    switch (currentBrushMode) {
+    case RAISE_LOWER:
+        applyBrush(dataPos.x(), dataPos.y());
+        break;
+    case SMOOTH:
+        applySmoothBrush(dataPos.x(), dataPos.y());
+        break;
+    case FLATTEN:
+        applyFlattenBrush(dataPos.x(), dataPos.y());
+        break;
+    case NOISE:
+        applyNoiseBrush(dataPos.x(), dataPos.y());
+        break;
+    case FILL:
+        applyFillBrush(dataPos.x(), dataPos.y());
+        break;
+    default:
+        break;
+    }
+}
+
+void MainWindow::mouseMoveEvent(QMouseEvent *event)
+{
+    if (!dynamicImageLabel) return;
+
+    QPoint globalPos = event->globalPosition().toPoint();
+    QPoint localPos = dynamicImageLabel->mapFromGlobal(globalPos);
+
+    if (!dynamicImageLabel->rect().contains(localPos)) return;
+
+    // Manejo especial para formas con preview
+    if (isDrawingShape && (currentBrushMode == LINE || currentBrushMode == RECTANGLE || currentBrushMode == CIRCLE)) {
+        QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
+
+        // Restaurar imagen original
+        currentImage = previewImage.copy();
+
+        // Dibujar preview de la forma
+        QPainter painter(&currentImage);
+        QPen pen(QColor(brushColor, brushColor, brushColor));
+        pen.setWidth(2);
+        painter.setPen(pen);
+
+        if (currentBrushMode == LINE) {
+            painter.drawLine(shapeStartPoint.x(), shapeStartPoint.y(),
+                             dataPos.x(), dataPos.y());
+        } else if (currentBrushMode == RECTANGLE) {
+            int x = std::min(shapeStartPoint.x(), dataPos.x());
+            int y = std::min(shapeStartPoint.y(), dataPos.y());
+            int w = std::abs(dataPos.x() - shapeStartPoint.x());
+            int h = std::abs(dataPos.y() - shapeStartPoint.y());
+            painter.drawRect(x, y, w, h);
+        } else if (currentBrushMode == CIRCLE) {
+            int dx = dataPos.x() - shapeStartPoint.x();
+            int dy = dataPos.y() - shapeStartPoint.y();
+            int radius = static_cast<int>(std::sqrt(dx * dx + dy * dy));
+            painter.drawEllipse(shapeStartPoint, radius, radius);
         }
 
+        // Actualizar display
+        if (dynamicImageLabel) {
+            dynamicImageLabel->setPixmap(QPixmap::fromImage(currentImage));
+        }
+        return;
+    }
+
+    // Comportamiento normal para otros pinceles
+    if (isPainting) {
         QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
 
         switch (currentBrushMode) {
@@ -1501,115 +1570,45 @@ void MainWindow::on_pushButtonGenerate_clicked()
             applyNoiseBrush(dataPos.x(), dataPos.y());
             break;
         case FILL:
-            applyFillBrush(dataPos.x(), dataPos.y());
+            // No hacer nada - el relleno solo se ejecuta en mousePressEvent
+            break;
+        case LINE:
+            break;
+        case RECTANGLE:
+            break;
+        case CIRCLE:
             break;
         default:
             break;
         }
     }
+}
 
-    void MainWindow::mouseMoveEvent(QMouseEvent *event)
-    {
-        if (!dynamicImageLabel) return;
-
+void MainWindow::mouseReleaseEvent(QMouseEvent *event)
+{
+    if (isDrawingShape && (currentBrushMode == LINE || currentBrushMode == RECTANGLE || currentBrushMode == CIRCLE)) {
         QPoint globalPos = event->globalPosition().toPoint();
         QPoint localPos = dynamicImageLabel->mapFromGlobal(globalPos);
+        QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
 
-        if (!dynamicImageLabel->rect().contains(localPos)) return;
-
-        // Manejo especial para formas con preview
-        if (isDrawingShape && (currentBrushMode == LINE || currentBrushMode == RECTANGLE || currentBrushMode == CIRCLE)) {
-            QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
-
-            // Restaurar imagen original
-            currentImage = previewImage.copy();
-
-            // Dibujar preview de la forma
-            QPainter painter(&currentImage);
-            QPen pen(QColor(brushColor, brushColor, brushColor));
-            pen.setWidth(2);
-            painter.setPen(pen);
-
-            if (currentBrushMode == LINE) {
-                painter.drawLine(shapeStartPoint.x(), shapeStartPoint.y(),
-                                 dataPos.x(), dataPos.y());
-            } else if (currentBrushMode == RECTANGLE) {
-                int x = std::min(shapeStartPoint.x(), dataPos.x());
-                int y = std::min(shapeStartPoint.y(), dataPos.y());
-                int w = std::abs(dataPos.x() - shapeStartPoint.x());
-                int h = std::abs(dataPos.y() - shapeStartPoint.y());
-                painter.drawRect(x, y, w, h);
-            } else if (currentBrushMode == CIRCLE) {
-                int dx = dataPos.x() - shapeStartPoint.x();
-                int dy = dataPos.y() - shapeStartPoint.y();
-                int radius = static_cast<int>(std::sqrt(dx * dx + dy * dy));
-                painter.drawEllipse(shapeStartPoint, radius, radius);
-            }
-
-            // Actualizar display
-            if (dynamicImageLabel) {
-                dynamicImageLabel->setPixmap(QPixmap::fromImage(currentImage));
-            }
-            return;
+        // Aplicar la forma final al heightMapData
+        if (currentBrushMode == LINE) {
+            drawLine(shapeStartPoint.x(), shapeStartPoint.y(), dataPos.x(), dataPos.y());
+        } else if (currentBrushMode == RECTANGLE) {
+            drawRectangle(shapeStartPoint.x(), shapeStartPoint.y(), dataPos.x(), dataPos.y());
+        } else if (currentBrushMode == CIRCLE) {
+            int dx = dataPos.x() - shapeStartPoint.x();
+            int dy = dataPos.y() - shapeStartPoint.y();
+            int radius = static_cast<int>(std::sqrt(dx * dx + dy * dy));
+            drawCircle(shapeStartPoint.x(), shapeStartPoint.y(), radius);
         }
 
-        // Comportamiento normal para otros pinceles
-        if (isPainting) {
-            QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
-
-            switch (currentBrushMode) {
-            case RAISE_LOWER:
-                applyBrush(dataPos.x(), dataPos.y());
-                break;
-            case SMOOTH:
-                applySmoothBrush(dataPos.x(), dataPos.y());
-                break;
-            case FLATTEN:
-                applyFlattenBrush(dataPos.x(), dataPos.y());
-                break;
-            case NOISE:
-                applyNoiseBrush(dataPos.x(), dataPos.y());
-                break;
-            case FILL:
-                // No hacer nada - el relleno solo se ejecuta en mousePressEvent
-                break;
-            case LINE:
-                break;
-            case RECTANGLE:
-                break;
-            case CIRCLE:
-                break;
-            default:
-                break;
-            }
-        }
+        isDrawingShape = false;
+        updateHeightmapDisplay();
     }
 
-    void MainWindow::mouseReleaseEvent(QMouseEvent *event)
-    {
-        if (isDrawingShape && (currentBrushMode == LINE || currentBrushMode == RECTANGLE || currentBrushMode == CIRCLE)) {
-            QPoint globalPos = event->globalPosition().toPoint();
-            QPoint localPos = dynamicImageLabel->mapFromGlobal(globalPos);
-            QPoint dataPos = mapToDataCoordinates(localPos.x(), localPos.y());
-
-            // Aplicar la forma final al heightMapData
-            if (currentBrushMode == LINE) {
-                drawLine(shapeStartPoint.x(), shapeStartPoint.y(), dataPos.x(), dataPos.y());
-            } else if (currentBrushMode == RECTANGLE) {
-                drawRectangle(shapeStartPoint.x(), shapeStartPoint.y(), dataPos.x(), dataPos.y());
-            } else if (currentBrushMode == CIRCLE) {
-                int dx = dataPos.x() - shapeStartPoint.x();
-                int dy = dataPos.y() - shapeStartPoint.y();
-                int radius = static_cast<int>(std::sqrt(dx * dx + dy * dy));
-                drawCircle(shapeStartPoint.x(), shapeStartPoint.y(), radius);
-            }
-
-            isDrawingShape = false;
-            updateHeightmapDisplay();
-        }
-
-        isPainting = false;
-    }
+    isPainting = false;
+}
 
 // =================================================================
 // === 3D VIEW WINDOW
@@ -1885,29 +1884,54 @@ void MainWindow::applyFillBrush(int mapX, int mapY)
 // ===========================================
 //   FUNCIONES TEXTURIZADO MAPA
 // ===========================================
+
+class PaintableLabel : public QLabel {
+
+public:
+    PaintableLabel(QWidget *parent = nullptr) : QLabel(parent) {
+        setMouseTracking(true);
+    }
+
+    std::function<void(QMouseEvent*)> paintCallback;
+    bool isPainting = false;
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::LeftButton) {
+            isPainting = true;
+            if (paintCallback) paintCallback(event);
+        }
+    }
+
+    void mouseMoveEvent(QMouseEvent *event) override {
+        if (isPainting && paintCallback) {
+            paintCallback(event);
+        }
+    }
+
+    void mouseReleaseEvent(QMouseEvent *event) override {
+        if (event->button() == Qt::LeftButton) {
+            isPainting = false;
+        }
+    }
+};
+
 void MainWindow::on_pushButtonTexturize_clicked()
 {
-    qDebug() << "=== on_pushButtonTexturize_clicked() called ===";
-
     if (mapWidth == 0 || mapHeight == 0) {
-        qDebug() << "ERROR: No map created yet";
         QMessageBox::warning(this, "Error", "Cree un mapa primero.");
         return;
     }
 
-    qDebug() << "Map dimensions:" << mapWidth << "x" << mapHeight;
-
     QDialog *dialog = new QDialog(this);
     dialog->setWindowTitle("Texturizar Mapa 3D");
-    dialog->resize(1000, 700);
-    qDebug() << "Dialog created";
+    dialog->resize(1200, 800);
 
     QHBoxLayout *mainLayout = new QHBoxLayout(dialog);
 
-    // Panel izquierdo para controles
+    // ===== PANEL IZQUIERDO: CONTROLES =====
     QVBoxLayout *leftPanel = new QVBoxLayout();
 
-    // Lista de colores/texturas
     QLabel *labelColors = new QLabel("Colores Disponibles:", dialog);
     leftPanel->addWidget(labelColors);
 
@@ -1916,18 +1940,12 @@ void MainWindow::on_pushButtonTexturize_clicked()
     colorList->setIconSize(QSize(64, 64));
     colorList->setSpacing(10);
     leftPanel->addWidget(colorList);
-    qDebug() << "Color list created";
 
-    // Añadir colores predefinidos
+    // Colores predefinidos
     QList<QColor> predefinedColors = {
-        QColor(255, 0, 0),      // Rojo
-        QColor(0, 255, 0),      // Verde
-        QColor(0, 0, 255),      // Azul
-        QColor(255, 255, 0),    // Amarillo
-        QColor(255, 0, 255),    // Magenta
-        QColor(0, 255, 255),    // Cian
-        QColor(128, 128, 128),  // Gris
-        QColor(255, 255, 255)   // Blanco
+        QColor(255, 0, 0), QColor(0, 255, 0), QColor(0, 0, 255),
+        QColor(255, 255, 0), QColor(255, 0, 255), QColor(0, 255, 255),
+        QColor(128, 128, 128), QColor(255, 255, 255)
     };
 
     for (const QColor &color : predefinedColors) {
@@ -1937,13 +1955,17 @@ void MainWindow::on_pushButtonTexturize_clicked()
         item->setData(Qt::UserRole, color);
         colorList->addItem(item);
     }
-    qDebug() << "Added" << predefinedColors.size() << "predefined colors";
 
-    // Botón para selector de color personalizado
     QPushButton *btnCustomColor = new QPushButton("Color Personalizado", dialog);
     leftPanel->addWidget(btnCustomColor);
 
-    // Control de tamaño de pincel
+    // Cargar directorio de texturas
+    QPushButton *btnLoadTexture = new QPushButton("Cargar Textura", dialog);
+    leftPanel->addWidget(btnLoadTexture);
+
+    QPushButton *btnLoadDirectory = new QPushButton("Cargar Directorio", dialog);
+    leftPanel->addWidget(btnLoadDirectory);
+
     QLabel *labelBrushSize = new QLabel("Tamaño del Pincel:", dialog);
     leftPanel->addWidget(labelBrushSize);
 
@@ -1954,74 +1976,265 @@ void MainWindow::on_pushButtonTexturize_clicked()
 
     QLabel *labelBrushSizeValue = new QLabel("20", dialog);
     leftPanel->addWidget(labelBrushSizeValue);
-    qDebug() << "Brush size controls created";
 
     leftPanel->addStretch();
 
-    // Panel derecho para vista 3D
+    // ===== PANEL DERECHO: VISTAS 2D Y 3D =====
     QVBoxLayout *rightPanel = new QVBoxLayout();
 
+    // VISTA 2D para pintar (usando PaintableLabel)
+    QLabel *label2DTitle = new QLabel("Vista 2D - Pintar aquí:", dialog);
+    rightPanel->addWidget(label2DTitle);
+
+    PaintableLabel *label2D = new PaintableLabel(dialog);
+    label2D->setMinimumSize(500, 400);
+    label2D->setScaledContents(true);
+
+    // Crear imagen 2D inicial (copia del heightmap en escala de grises)
+    QImage *paintImage = new QImage(mapWidth, mapHeight, QImage::Format_RGB32);
+    for (int y = 0; y < mapHeight; ++y) {
+        for (int x = 0; x < mapWidth; ++x) {
+            unsigned char height = heightMapData[y][x];
+            paintImage->setPixel(x, y, qRgb(height, height, height));
+        }
+    }
+    label2D->setPixmap(QPixmap::fromImage(*paintImage));
+    rightPanel->addWidget(label2D);
+
+    // VISTA 3D para ver resultado
+    QLabel *label3DTitle = new QLabel("Vista 3D - Resultado:", dialog);
+    rightPanel->addWidget(label3DTitle);
+
     OpenGLWidget *glWidget = new OpenGLWidget(dialog);
-    qDebug() << "OpenGLWidget created";
-
-    qDebug() << "Calling setHeightMapData()...";
     glWidget->setHeightMapData(heightMapData);
-    qDebug() << "setHeightMapData() completed";
-
+    glWidget->setMinimumSize(500, 400);
+    glWidget->setTexturePaintMode(true);
     rightPanel->addWidget(glWidget);
 
     mainLayout->addLayout(leftPanel, 1);
     mainLayout->addLayout(rightPanel, 3);
 
-    // Activar modo de pintura
-    qDebug() << "Activating texture paint mode...";
-    glWidget->setTexturePaintMode(true);
-    qDebug() << "Texture paint mode activated";
+    // ===== VARIABLES COMPARTIDAS =====
+    QColor *currentColor = new QColor(Qt::red);
+    int *brushSize = new int(20);
+    QList<QImage> *loadedTextures = new QList<QImage>();
+    QList<QString> *textureNames = new QList<QString>();
+    int *currentTextureMode = new int(0); // 0 = color, 1 = textura
 
-    // Conectar selector de color personalizado
+    // ===== LAMBDA PARA PINTAR =====
+    auto paintOnLabel = [=](QMouseEvent *mouseEvent) {
+        QPoint pos = mouseEvent->pos();
+        int mapX = (pos.x() * mapWidth) / label2D->width();
+        int mapY = (pos.y() * mapHeight) / label2D->height();
+
+        if (mapX < 0 || mapX >= mapWidth || mapY < 0 || mapY >= mapHeight) return;
+
+        int radius = *brushSize / 2;
+
+        // Determinar si estamos pintando color o textura
+        QListWidgetItem *currentItem = colorList->currentItem();
+        if (!currentItem) return;
+
+        bool isTexture = (currentItem->data(Qt::UserRole).toInt() == -1);
+
+        for (int dy = -radius; dy <= radius; ++dy) {
+            for (int dx = -radius; dx <= radius; ++dx) {
+                int x = mapX + dx;
+                int y = mapY + dy;
+
+                if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) {
+                    float dist = std::sqrt(dx * dx + dy * dy);
+                    if (dist <= radius) {
+                        QColor pixelColor;
+
+                        if (isTexture) {
+                            // Obtener color de la textura
+                            int textureIndex = currentItem->data(Qt::UserRole + 1).toInt();
+                            const QImage &texture = loadedTextures->at(textureIndex);
+
+                            // Mapear coordenadas del mapa a coordenadas de textura (tiling)
+                            int texX = x % texture.width();
+                            int texY = y % texture.height();
+                            pixelColor = texture.pixelColor(texX, texY);
+                        } else {
+                            // Usar color sólido
+                            pixelColor = *currentColor;
+                        }
+
+                        paintImage->setPixel(x, y, pixelColor.rgb());
+                        glWidget->setColorAtPosition(x, y, pixelColor);
+                    }
+                }
+            }
+        }
+
+        label2D->setPixmap(QPixmap::fromImage(*paintImage));
+        glWidget->generateMesh();
+        glWidget->update();
+    };
+    // Asignar el callback al PaintableLabel
+    label2D->paintCallback = paintOnLabel;
+
+    // ===== CONECTAR EVENTOS =====
+
+    // Selector de color personalizado
     connect(btnCustomColor, &QPushButton::clicked, [colorList, dialog]() {
-        qDebug() << "Custom color button clicked";
         QColor color = QColorDialog::getColor(Qt::white, dialog, "Seleccionar Color");
         if (color.isValid()) {
-            qDebug() << "Selected custom color:" << color;
             QPixmap pixmap(64, 64);
             pixmap.fill(color);
             QListWidgetItem *item = new QListWidgetItem(QIcon(pixmap), "");
             item->setData(Qt::UserRole, color);
             colorList->addItem(item);
             colorList->setCurrentItem(item);
-        } else {
-            qDebug() << "Color selection cancelled";
         }
     });
 
-    // Conectar selección de color
-    connect(colorList, &QListWidget::currentRowChanged, [glWidget, colorList](int row) {
-        qDebug() << "Color selected, row:" << row;
+    // Cambio de color seleccionado
+    connect(colorList, &QListWidget::currentRowChanged, [colorList, currentColor, glWidget, currentTextureMode](int row) {
         if (row >= 0) {
             QListWidgetItem *item = colorList->item(row);
-            QColor color = item->data(Qt::UserRole).value<QColor>();
-            qDebug() << "Setting current paint color to:" << color;
-            glWidget->setCurrentTexture(row);
-            glWidget->setCurrentPaintColor(color);
+
+            if (item->data(Qt::UserRole).toInt() == -1) {
+                // Es una textura
+                *currentTextureMode = 1;
+            } else {
+                // Es un color
+                *currentTextureMode = 0;
+                QColor color = item->data(Qt::UserRole).value<QColor>();
+                *currentColor = color;
+                glWidget->setCurrentPaintColor(color);
+            }
         }
     });
 
-    // Conectar tamaño de pincel
-    connect(sliderTextureBrushSize, &QSlider::valueChanged, [glWidget, labelBrushSizeValue](int value) {
-        qDebug() << "Brush size changed to:" << value;
+    // Cambio de tamaño de pincel
+    connect(sliderTextureBrushSize, &QSlider::valueChanged, [brushSize, labelBrushSizeValue](int value) {
+        *brushSize = value;
         labelBrushSizeValue->setText(QString::number(value));
-        glWidget->setTextureBrushSize(value);
+    });
+
+    QPushButton *btnSaveTexture = new QPushButton("Guardar Textura PNG", dialog);
+    leftPanel->addWidget(btnSaveTexture);
+
+    leftPanel->addStretch(); // Esta línea ya existe en la línea 1959
+
+    // Limpieza de memoria al cerrar el diálogo
+    connect(dialog, &QDialog::destroyed, [paintImage, currentColor, brushSize, loadedTextures, textureNames, currentTextureMode]() {
+        delete paintImage;
+        delete currentColor;
+        delete brushSize;
+        delete loadedTextures;
+        delete textureNames;
+        delete currentTextureMode;
+    });
+
+    // Conectar botón de guardado
+    connect(btnSaveTexture, &QPushButton::clicked, [paintImage, dialog]() {
+        QString fileName = QFileDialog::getSaveFileName(dialog,
+                                                        "Guardar Textura",
+                                                        "",
+                                                        "PNG Files (*.png)");
+        if (fileName.isEmpty()) return;
+
+        if (paintImage->save(fileName, "PNG")) {
+            QMessageBox::information(dialog, "Éxito", "Textura guardada correctamente.");
+        } else {
+            QMessageBox::critical(dialog, "Error", "No se pudo guardar la textura.");
+        }
+    });
+
+    connect(btnLoadTexture, &QPushButton::clicked, [colorList, loadedTextures, textureNames, dialog]() {
+        QString fileName = QFileDialog::getOpenFileName(dialog,
+                                                        "Cargar Textura",
+                                                        "",
+                                                        "Imágenes (*.png *.jpg *.jpeg *.bmp)");
+        if (fileName.isEmpty()) return;
+
+        QImage texture(fileName);
+        if (texture.isNull()) {
+            QMessageBox::warning(dialog, "Error", "No se pudo cargar la textura.");
+            return;
+        }
+
+        // Agregar a la lista
+        loadedTextures->append(texture);
+        textureNames->append(QFileInfo(fileName).fileName());
+
+        // Crear miniatura para la lista
+        QImage thumbnail = texture.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        QPixmap pixmap = QPixmap::fromImage(thumbnail);
+
+        QListWidgetItem *item = new QListWidgetItem(QIcon(pixmap), QFileInfo(fileName).fileName());
+        item->setData(Qt::UserRole, QVariant::fromValue(-1)); // -1 indica textura, no color
+        item->setData(Qt::UserRole + 1, loadedTextures->size() - 1); // Índice de textura
+        colorList->addItem(item);
+    });
+
+    connect(btnLoadDirectory, &QPushButton::clicked, [colorList, loadedTextures, textureNames, dialog]() {
+        QString dirPath = QFileDialog::getExistingDirectory(dialog,
+                                                            "Seleccionar Directorio de Texturas",
+                                                            "",
+                                                            QFileDialog::ShowDirsOnly);
+        if (dirPath.isEmpty()) return;
+
+        QDir dir(dirPath);
+        QStringList filters;
+        filters << "*.png" << "*.jpg" << "*.jpeg" << "*.bmp";
+        QFileInfoList files = dir.entryInfoList(filters, QDir::Files);
+
+        for (const QFileInfo &fileInfo : files) {
+            QImage texture(fileInfo.absoluteFilePath());
+            if (texture.isNull()) continue;
+
+            loadedTextures->append(texture);
+            textureNames->append(fileInfo.fileName());
+
+            QImage thumbnail = texture.scaled(64, 64, Qt::KeepAspectRatio, Qt::SmoothTransformation);
+            QPixmap pixmap = QPixmap::fromImage(thumbnail);
+
+            QListWidgetItem *item = new QListWidgetItem(QIcon(pixmap), fileInfo.fileName());
+            item->setData(Qt::UserRole, QVariant::fromValue(-1));
+            item->setData(Qt::UserRole + 1, loadedTextures->size() - 1);
+            colorList->addItem(item);
+        }
+
+        QMessageBox::information(dialog, "Éxito",
+                                 QString("Se cargaron %1 texturas.").arg(files.size()));
     });
 
     // Seleccionar primer color por defecto
     if (colorList->count() > 0) {
-        qDebug() << "Selecting first color by default";
         colorList->setCurrentRow(0);
     }
 
     dialog->setLayout(mainLayout);
-    qDebug() << "Showing dialog...";
     dialog->show();
-    qDebug() << "=== on_pushButtonTexturize_clicked() finished ===";
+}
+
+QImage MainWindow::generateColorMapImage(const std::vector<std::vector<QColor>>& colorMap)
+{
+    if (colorMap.empty() || colorMap[0].empty()) {
+        return QImage();
+    }
+
+    int height = colorMap.size();
+    int width = colorMap[0].size();
+
+    QImage image(width, height, QImage::Format_RGB32);
+
+    for (int y = 0; y < height; ++y) {
+        for (int x = 0; x < width; ++x) {
+            QColor color = colorMap[y][x];
+            if (color.isValid()) {
+                image.setPixel(x, y, color.rgb());
+            } else {
+                // Color por defecto si es transparente
+                unsigned char h = heightMapData[y][x];
+                image.setPixel(x, y, qRgb(h, h, h));
+            }
+        }
+    }
+
+    return image;
 }

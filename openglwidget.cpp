@@ -904,3 +904,45 @@ QVector3D OpenGLWidget::screenToWorld(const QPoint &screenPos)
 
     return intersection;
 }
+void OpenGLWidget::setColorAtPosition(int x, int y, const QColor &color)
+{
+    // Validar coordenadas
+    if (x < 0 || x >= mapWidth || y < 0 || y >= mapHeight) {
+        qDebug() << "setColorAtPosition: coordenadas fuera de rango:" << x << y;
+        return;
+    }
+
+    // Inicializar colorMap si está vacío
+    if (colorMap.empty()) {
+        qDebug() << "Inicializando colorMap con dimensiones:" << mapWidth << "x" << mapHeight;
+        colorMap.assign(mapHeight, std::vector<QColor>(mapWidth, Qt::transparent));
+    }
+
+    // Establecer el color en la posición especificada
+    colorMap[y][x] = color;
+
+}
+
+QImage OpenGLWidget::generateColorMapImage() const
+{
+    if (mapWidth == 0 || mapHeight == 0) {
+        return QImage();
+    }
+
+    QImage image(mapWidth, mapHeight, QImage::Format_RGB32);
+
+    for (int y = 0; y < mapHeight; ++y) {
+        for (int x = 0; x < mapWidth; ++x) {
+            if (!colorMap.empty() && colorMap[y][x].isValid()) {
+                // Usar color pintado
+                image.setPixel(x, y, colorMap[y][x].rgb());
+            } else {
+                // Usar color basado en altura (escala de grises)
+                unsigned char height = heightMapData[y][x];
+                image.setPixel(x, y, qRgb(height, height, height));
+            }
+        }
+    }
+
+    return image;
+}

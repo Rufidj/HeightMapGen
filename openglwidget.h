@@ -31,6 +31,9 @@ public:
     void setTextureBrushSize(int size);
     void loadTerrainTexture(const QString &path);
     void setCurrentPaintColor(const QColor &color);
+    void setColorAtPosition(int x, int y, const QColor &color);
+    void generateMesh();
+    QImage generateColorMapImage() const;
     bool showWater = true;
     float waterLevel = 50.0f;
 
@@ -46,7 +49,7 @@ protected:
     void leaveEvent(QEvent *event) override;  // NUEVO
 
 private:
-    void generateMesh();
+
     void generateWaterMesh();
     void setupShaders();
     void setupTerrainBuffers();

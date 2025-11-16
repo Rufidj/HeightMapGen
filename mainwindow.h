@@ -42,6 +42,7 @@ private slots:
     void on_pushButtonImport3D_clicked();
     void applyFillBrush(int mapX, int mapY);
     void on_pushButtonTexturize_clicked();
+    QImage generateColorMapImage(const std::vector<std::vector<QColor>>& colorMap);
 
 private:
     Ui::MainWindow *ui;
