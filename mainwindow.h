@@ -41,6 +41,7 @@ private slots:
     void on_pushButtonExport3D_clicked();
     void on_pushButtonImport3D_clicked();
     void applyFillBrush(int mapX, int mapY);
+    void on_pushButtonTexturize_clicked();
 
 private:
     Ui::MainWindow *ui;
@@ -56,6 +57,12 @@ private:
     int brushColor = 128;  // Color de relleno (0-255
     int brushHeight = 128;
     double brushIntensity = 0.3;
+
+    // En la sección private de mainwindow.h:
+    std::vector<std::vector<int>> textureMap; // Mapa de índices de textura por píxel
+    std::vector<QString> loadedTextures;      // Lista de rutas de texturas cargadas
+    int currentTextureIndex = 0;              // Textura actualmente seleccionada
+    int textureBrushSize = 20;                // Tamaño del pincel d
 
     // === BRUSH MODES ===
     enum BrushMode {

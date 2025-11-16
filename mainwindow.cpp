@@ -27,6 +27,8 @@
 #include <QCheckBox>  // AGREGAR ESTA LÍNEA
 #include <QSlider>    // AGREGAR ESTA LÍNEA TAMBIÉN
 #include <queue>
+#include <QListWidget>
+#include <QColorDialog>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -220,6 +222,13 @@ MainWindow::MainWindow(QWidget *parent)
     QAction *toolActionExport = mainToolBar->addAction(QIcon::fromTheme("document-export"), "Exportar");
     toolActionExport->setToolTip("Exportar modelo 3D (OBJ/STL)");
     connect(toolActionExport, &QAction::triggered, this, &MainWindow::on_pushButtonExport3D_clicked);
+
+    // ===========================================
+    //     TEXTURIZAR MAPA
+    // ===========================================
+    QAction *toolActionTexturize = mainToolBar->addAction(QIcon::fromTheme("applications-graphics"), "Texturizar");
+    toolActionTexturize->setToolTip("Pintar texturas en el mapa 3D");
+    connect(toolActionTexturize, &QAction::triggered, this, &MainWindow::on_pushButtonTexturize_clicked);
 
 }  // <-- LLAVE DE CIERRE DEL CONSTRUCTOR (debe estar aquí)
 
@@ -1871,5 +1880,148 @@ void MainWindow::applyFillBrush(int mapX, int mapY)
 
     updateHeightmapDisplay();
 
+}
 
+// ===========================================
+//   FUNCIONES TEXTURIZADO MAPA
+// ===========================================
+void MainWindow::on_pushButtonTexturize_clicked()
+{
+    qDebug() << "=== on_pushButtonTexturize_clicked() called ===";
+
+    if (mapWidth == 0 || mapHeight == 0) {
+        qDebug() << "ERROR: No map created yet";
+        QMessageBox::warning(this, "Error", "Cree un mapa primero.");
+        return;
+    }
+
+    qDebug() << "Map dimensions:" << mapWidth << "x" << mapHeight;
+
+    QDialog *dialog = new QDialog(this);
+    dialog->setWindowTitle("Texturizar Mapa 3D");
+    dialog->resize(1000, 700);
+    qDebug() << "Dialog created";
+
+    QHBoxLayout *mainLayout = new QHBoxLayout(dialog);
+
+    // Panel izquierdo para controles
+    QVBoxLayout *leftPanel = new QVBoxLayout();
+
+    // Lista de colores/texturas
+    QLabel *labelColors = new QLabel("Colores Disponibles:", dialog);
+    leftPanel->addWidget(labelColors);
+
+    QListWidget *colorList = new QListWidget(dialog);
+    colorList->setViewMode(QListWidget::IconMode);
+    colorList->setIconSize(QSize(64, 64));
+    colorList->setSpacing(10);
+    leftPanel->addWidget(colorList);
+    qDebug() << "Color list created";
+
+    // Añadir colores predefinidos
+    QList<QColor> predefinedColors = {
+        QColor(255, 0, 0),      // Rojo
+        QColor(0, 255, 0),      // Verde
+        QColor(0, 0, 255),      // Azul
+        QColor(255, 255, 0),    // Amarillo
+        QColor(255, 0, 255),    // Magenta
+        QColor(0, 255, 255),    // Cian
+        QColor(128, 128, 128),  // Gris
+        QColor(255, 255, 255)   // Blanco
+    };
+
+    for (const QColor &color : predefinedColors) {
+        QPixmap pixmap(64, 64);
+        pixmap.fill(color);
+        QListWidgetItem *item = new QListWidgetItem(QIcon(pixmap), "");
+        item->setData(Qt::UserRole, color);
+        colorList->addItem(item);
+    }
+    qDebug() << "Added" << predefinedColors.size() << "predefined colors";
+
+    // Botón para selector de color personalizado
+    QPushButton *btnCustomColor = new QPushButton("Color Personalizado", dialog);
+    leftPanel->addWidget(btnCustomColor);
+
+    // Control de tamaño de pincel
+    QLabel *labelBrushSize = new QLabel("Tamaño del Pincel:", dialog);
+    leftPanel->addWidget(labelBrushSize);
+
+    QSlider *sliderTextureBrushSize = new QSlider(Qt::Horizontal, dialog);
+    sliderTextureBrushSize->setRange(5, 100);
+    sliderTextureBrushSize->setValue(20);
+    leftPanel->addWidget(sliderTextureBrushSize);
+
+    QLabel *labelBrushSizeValue = new QLabel("20", dialog);
+    leftPanel->addWidget(labelBrushSizeValue);
+    qDebug() << "Brush size controls created";
+
+    leftPanel->addStretch();
+
+    // Panel derecho para vista 3D
+    QVBoxLayout *rightPanel = new QVBoxLayout();
+
+    OpenGLWidget *glWidget = new OpenGLWidget(dialog);
+    qDebug() << "OpenGLWidget created";
+
+    qDebug() << "Calling setHeightMapData()...";
+    glWidget->setHeightMapData(heightMapData);
+    qDebug() << "setHeightMapData() completed";
+
+    rightPanel->addWidget(glWidget);
+
+    mainLayout->addLayout(leftPanel, 1);
+    mainLayout->addLayout(rightPanel, 3);
+
+    // Activar modo de pintura
+    qDebug() << "Activating texture paint mode...";
+    glWidget->setTexturePaintMode(true);
+    qDebug() << "Texture paint mode activated";
+
+    // Conectar selector de color personalizado
+    connect(btnCustomColor, &QPushButton::clicked, [colorList, dialog]() {
+        qDebug() << "Custom color button clicked";
+        QColor color = QColorDialog::getColor(Qt::white, dialog, "Seleccionar Color");
+        if (color.isValid()) {
+            qDebug() << "Selected custom color:" << color;
+            QPixmap pixmap(64, 64);
+            pixmap.fill(color);
+            QListWidgetItem *item = new QListWidgetItem(QIcon(pixmap), "");
+            item->setData(Qt::UserRole, color);
+            colorList->addItem(item);
+            colorList->setCurrentItem(item);
+        } else {
+            qDebug() << "Color selection cancelled";
+        }
+    });
+
+    // Conectar selección de color
+    connect(colorList, &QListWidget::currentRowChanged, [glWidget, colorList](int row) {
+        qDebug() << "Color selected, row:" << row;
+        if (row >= 0) {
+            QListWidgetItem *item = colorList->item(row);
+            QColor color = item->data(Qt::UserRole).value<QColor>();
+            qDebug() << "Setting current paint color to:" << color;
+            glWidget->setCurrentTexture(row);
+            glWidget->setCurrentPaintColor(color);
+        }
+    });
+
+    // Conectar tamaño de pincel
+    connect(sliderTextureBrushSize, &QSlider::valueChanged, [glWidget, labelBrushSizeValue](int value) {
+        qDebug() << "Brush size changed to:" << value;
+        labelBrushSizeValue->setText(QString::number(value));
+        glWidget->setTextureBrushSize(value);
+    });
+
+    // Seleccionar primer color por defecto
+    if (colorList->count() > 0) {
+        qDebug() << "Selecting first color by default";
+        colorList->setCurrentRow(0);
+    }
+
+    dialog->setLayout(mainLayout);
+    qDebug() << "Showing dialog...";
+    dialog->show();
+    qDebug() << "=== on_pushButtonTexturize_clicked() finished ===";
 }

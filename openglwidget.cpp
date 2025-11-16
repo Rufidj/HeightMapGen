@@ -4,6 +4,7 @@
 #include <QKeyEvent>
 #include <QDebug>
 #include <cmath>
+#include <algorithm>
 
 OpenGLWidget::OpenGLWidget(QWidget *parent)
     : QOpenGLWidget(parent)
@@ -17,6 +18,10 @@ OpenGLWidget::OpenGLWidget(QWidget *parent)
     moveSpeed = 5.0f;
 
     setFocusPolicy(Qt::StrongFocus);
+    setMouseTracking(true);
+
+    // IMPORTANTE: Inicializar colorMap vacío
+    // Se llenará cuando se llame a setHeightMapData()
 
     qDebug() << "OpenGLWidget constructor called";
 }
@@ -25,7 +30,6 @@ OpenGLWidget::~OpenGLWidget()
 {
     makeCurrent();
 
-    // Limpiar shaders
     if (terrainShader) {
         delete terrainShader;
         terrainShader = nullptr;
@@ -35,7 +39,6 @@ OpenGLWidget::~OpenGLWidget()
         waterShader = nullptr;
     }
 
-    // Limpiar buffers de terreno
     if (terrainVAO) {
         terrainVAO->destroy();
         delete terrainVAO;
@@ -49,7 +52,6 @@ OpenGLWidget::~OpenGLWidget()
         delete terrainEBO;
     }
 
-    // Limpiar buffers de agua
     if (waterVAO) {
         waterVAO->destroy();
         delete waterVAO;
@@ -67,11 +69,18 @@ OpenGLWidget::~OpenGLWidget()
         delete terrainTexture;
         terrainTexture = nullptr;
     }
-    // AGREGAR limpieza de textura del agua
     if (waterTexture) {
         delete waterTexture;
         waterTexture = nullptr;
     }
+
+    // NUEVO: Limpiar texturas de terrain
+    for (auto* tex : terrainTextures) {
+        if (tex) {
+            delete tex;
+        }
+    }
+    terrainTextures.clear();
 
     doneCurrent();
 }
@@ -93,7 +102,7 @@ void OpenGLWidget::setupShaders()
         return;
     }
 
-    // Shader para agua
+    // Shader para agua (mantener igual)
     waterShader = new QOpenGLShaderProgram(this);
     if (!waterShader->addShaderFromSourceFile(QOpenGLShader::Vertex, ":/shaders/water.vert")) {
         qDebug() << "ERROR: Failed to compile water vertex shader:" << waterShader->log();
@@ -124,14 +133,12 @@ void OpenGLWidget::initializeGL()
 
     qDebug() << "=== INITIALIZING SHADERS ===";
 
-    // Verificar que setupShaders() existe y se llama
     if (terrainShader || waterShader) {
         qDebug() << "ERROR: Shaders already exist before setup!";
     }
 
     setupShaders();
 
-    // VERIFICACIÓN CRÍTICA
     if (!terrainShader || !waterShader) {
         qDebug() << "CRITICAL ERROR: Shaders failed to initialize!";
         qDebug() << "terrainShader:" << (terrainShader != nullptr);
@@ -143,7 +150,6 @@ void OpenGLWidget::initializeGL()
         qDebug() << "waterShader valid:" << waterShader->isLinked();
     }
 
-    // Crear VAOs y VBOs solo si los shaders funcionan
     if (terrainShader && waterShader) {
         terrainVAO = new QOpenGLVertexArrayObject(this);
         terrainVAO->create();
@@ -168,13 +174,15 @@ void OpenGLWidget::initializeGL()
 
     qDebug() << "OpenGL initialized successfully";
 
-    // Generar mallas diferidas
     if (!heightMapData.empty() && mapWidth > 0 && mapHeight > 0) {
         qDebug() << "Generating deferred meshes...";
         generateMesh();
         generateWaterMesh();
+
+        qDebug() << "Splatmap initialized:" << mapWidth << "x" << mapHeight;
     }
 }
+
 void OpenGLWidget::setupTerrainBuffers()
 {
     if (vertices.empty() || indices.empty()) {
@@ -184,26 +192,20 @@ void OpenGLWidget::setupTerrainBuffers()
 
     terrainVAO->bind();
 
-    // VBO para vértices
     terrainVBO->bind();
     terrainVBO->allocate(vertices.data(), vertices.size() * sizeof(float));
 
-    // Layout: position (3), color (3), texCoord (2) = 8 floats por vértice
     terrainShader->bind();
 
-    // Atributo 0: position
     terrainShader->enableAttributeArray(0);
     terrainShader->setAttributeBuffer(0, GL_FLOAT, 0, 3, 8 * sizeof(float));
 
-    // Atributo 1: color
     terrainShader->enableAttributeArray(1);
     terrainShader->setAttributeBuffer(1, GL_FLOAT, 3 * sizeof(float), 3, 8 * sizeof(float));
 
-    // Atributo 2: texCoord
     terrainShader->enableAttributeArray(2);
     terrainShader->setAttributeBuffer(2, GL_FLOAT, 6 * sizeof(float), 2, 8 * sizeof(float));
 
-    // EBO para índices
     terrainEBO->bind();
     terrainEBO->allocate(indices.data(), indices.size() * sizeof(unsigned int));
 
@@ -222,26 +224,20 @@ void OpenGLWidget::setupWaterBuffers()
 
     waterVAO->bind();
 
-    // VBO para vértices de agua
     waterVBO->bind();
     waterVBO->allocate(waterVertices.data(), waterVertices.size() * sizeof(float));
 
-    // MODIFICAR: Layout ahora es position (3), color (3), texCoord (2) = 8 floats por vértice
     waterShader->bind();
 
-    // Atributo 0: position
     waterShader->enableAttributeArray(0);
-    waterShader->setAttributeBuffer(0, GL_FLOAT, 0, 3, 8 * sizeof(float));  // CAMBIO: 8 en lugar de 6
+    waterShader->setAttributeBuffer(0, GL_FLOAT, 0, 3, 8 * sizeof(float));
 
-    // Atributo 1: color
     waterShader->enableAttributeArray(1);
-    waterShader->setAttributeBuffer(1, GL_FLOAT, 3 * sizeof(float), 3, 8 * sizeof(float));  // CAMBIO: 8 en lugar de 6
+    waterShader->setAttributeBuffer(1, GL_FLOAT, 3 * sizeof(float), 3, 8 * sizeof(float));
 
-    // AGREGAR: Atributo 2: texCoord
     waterShader->enableAttributeArray(2);
     waterShader->setAttributeBuffer(2, GL_FLOAT, 6 * sizeof(float), 2, 8 * sizeof(float));
 
-    // EBO para índices
     waterEBO->bind();
     waterEBO->allocate(waterIndices.data(), waterIndices.size() * sizeof(unsigned int));
 
@@ -272,18 +268,28 @@ void OpenGLWidget::generateMesh()
             vertices.push_back(height);
             vertices.push_back(static_cast<float>(y));
 
+            // IMPORTANTE: Usar colorMap si existe, sino usar colores por altura
             float r, g, b;
-            if (height < 20.0f) {
-                r = 0.2f; g = 0.4f; b = 0.8f;
-            } else if (height < 40.0f) {
-                r = 0.76f; g = 0.7f; b = 0.5f;
-            } else if (height < 60.0f) {
-                r = 0.2f; g = 0.6f; b = 0.2f;
-            } else if (height < 80.0f) {
-                r = 0.5f; g = 0.5f; b = 0.5f;
+            if (!colorMap.empty() && colorMap[y][x].isValid()) {
+                // Usar color pintado
+                r = colorMap[y][x].redF();
+                g = colorMap[y][x].greenF();
+                b = colorMap[y][x].blueF();
             } else {
-                r = 1.0f; g = 1.0f; b = 1.0f;
+                // Usar colores por altura (sistema original)
+                if (height < 20.0f) {
+                    r = 0.2f; g = 0.4f; b = 0.8f;
+                } else if (height < 40.0f) {
+                    r = 0.76f; g = 0.7f; b = 0.5f;
+                } else if (height < 60.0f) {
+                    r = 0.2f; g = 0.6f; b = 0.2f;
+                } else if (height < 80.0f) {
+                    r = 0.5f; g = 0.5f; b = 0.5f;
+                } else {
+                    r = 1.0f; g = 1.0f; b = 1.0f;
+                }
             }
+
             vertices.push_back(r);
             vertices.push_back(g);
             vertices.push_back(b);
@@ -293,7 +299,7 @@ void OpenGLWidget::generateMesh()
         }
     }
 
-    // Generar índices
+    // Generar índices (sin cambios)
     for (int y = 0; y < mapHeight - 1; ++y) {
         for (int x = 0; x < mapWidth - 1; ++x) {
             unsigned int topLeft = y * mapWidth + x;
@@ -316,7 +322,6 @@ void OpenGLWidget::generateMesh()
 
     setupTerrainBuffers();
 }
-
 void OpenGLWidget::generateWaterMesh()
 {
     waterVertices.clear();
@@ -468,107 +473,89 @@ void OpenGLWidget::loadWaterTexture(const QString &path)
 void OpenGLWidget::resizeGL(int w, int h)
 {
     glViewport(0, 0, w, h);
+
     projection.setToIdentity();
-    // Cambiar 0.1f a 1.0f o 2.0f
-    projection.perspective(45.0f, static_cast<float>(w) / h, 1.0f, 10000.0f);
+
+    // Usar proyección ortográfica en modo pintura
+    if (texturePaintMode) {
+        float aspect = (float)w / (float)h;
+        float orthoSize = zoom * 50.0f;
+        projection.ortho(-orthoSize * aspect, orthoSize * aspect,
+                         -orthoSize, orthoSize,
+                         -1000.0f, 1000.0f);
+    } else {
+        // Proyección perspectiva para visualización normal
+        projection.perspective(45.0f, (float)w / (float)h, 0.1f, 1000.0f);
+    }
 }
 
-void OpenGLWidget::paintGL()
+void OpenGLWidget::loadTerrainTexture(const QString &path)
 {
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    qDebug() << "=== LOADING TERRAIN TEXTURE ===";
+    qDebug() << "Loading terrain texture for splatting:" << path;
 
-    if (vertices.empty() || indices.empty()) {
+    QImage image(path);
+    if (image.isNull()) {
+        qDebug() << "ERROR: Failed to load terrain texture from:" << path;
         return;
     }
 
-    // Configurar matrices de transformación
-    view.setToIdentity();
-    view.translate(0.0f, -50.0f + cameraY, -zoom);
-    view.rotate(rotationX, 1.0f, 0.0f, 0.0f);
-    view.rotate(rotationY, 0.0f, 1.0f, 0.0f);
-    view.translate(-cameraX, 0.0f, -cameraZ);
+    qDebug() << "Image loaded successfully. Size:" << image.width() << "x" << image.height();
 
-    model.setToIdentity();
-    model.translate(-mapWidth / 2.0f, 0.0f, -mapHeight / 2.0f);
+    QOpenGLTexture *newTexture = new QOpenGLTexture(image.flipped(Qt::Vertical));
+    newTexture->setMinificationFilter(QOpenGLTexture::Linear);
+    newTexture->setMagnificationFilter(QOpenGLTexture::Linear);
+    newTexture->setWrapMode(QOpenGLTexture::Repeat);
 
-    QMatrix4x4 mvp = projection * view * model;
+    terrainTextures.push_back(newTexture);
 
-    // RENDERIZAR TERRENO CON SHADER
-    terrainShader->bind();
-    terrainShader->setUniformValue("mvpMatrix", mvp);
-    terrainShader->setUniformValue("useTexture", useTexture);
-
-    if (useTexture && terrainTexture) {
-        terrainTexture->bind(0);
-        terrainShader->setUniformValue("textureSampler", 0);
-    }
-
-    terrainVAO->bind();
-    glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
-    terrainVAO->release();
-
-    if (useTexture && terrainTexture) {
-        terrainTexture->release();
-    }
-    terrainShader->release();
-    // RENDERIZAR AGUA CON SHADER
-    if (showWater && !waterVertices.empty() && !waterIndices.empty()) {
-        glDisable(GL_CULL_FACE);
-
-        waterShader->bind();
-        waterShader->setUniformValue("mvpMatrix", mvp);
-        waterShader->setUniformValue("waterAlpha", waterAlpha);
-
-        // AGREGAR: Configurar textura del agua si existe
-        if (useWaterTexture && waterTexture) {
-            waterShader->setUniformValue("useWaterTexture", true);
-            waterShader->setUniformValue("waterTextureSampler", 0);
-            glActiveTexture(GL_TEXTURE0);
-            waterTexture->bind();
-        } else {
-            waterShader->setUniformValue("useWaterTexture", false);
-        }
-
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        glDepthMask(GL_FALSE);
-
-        waterVAO->bind();
-        glDrawElements(GL_TRIANGLES, waterIndices.size(), GL_UNSIGNED_INT, 0);
-        waterVAO->release();
-
-        glDepthMask(GL_TRUE);
-
-        // Liberar textura si se usó
-        if (useWaterTexture && waterTexture) {
-            waterTexture->release();
-        }
-
-        waterShader->release();
-        glEnable(GL_CULL_FACE);
-    }
+    qDebug() << "Terrain texture loaded. Total textures:" << terrainTextures.size();
+    qDebug() << "=== END LOADING TEXTURE ===";
+    update();
 }
+
 void OpenGLWidget::mousePressEvent(QMouseEvent *event)
 {
     lastMousePos = event->pos();
-}
 
+    // NUEVO: Validar que el clic está dentro del widget
+    if (!rect().contains(event->pos())) {
+        qDebug() << "Click outside widget bounds, ignoring";
+        return;
+    }
+
+    if (texturePaintMode && event->button() == Qt::LeftButton) {
+        applyTextureBrush(event->pos());
+    }
+}
 void OpenGLWidget::mouseMoveEvent(QMouseEvent *event)
 {
     int dx = event->pos().x() - lastMousePos.x();
     int dy = event->pos().y() - lastMousePos.y();
 
-    if (event->buttons() & Qt::LeftButton) {
-        rotationX += dy * 0.5f;
-        rotationY += dx * 0.5f;
+    // Actualizar posición del cursor SIEMPRE
+    currentMousePos = event->pos();
+    showBrushCursor = true;
 
-        if (rotationX > 89.0f) rotationX = 89.0f;
-        if (rotationX < -89.0f) rotationX = -89.0f;
-
-        update();
+    if (texturePaintMode) {
+        // Modo pintura
+        if (event->buttons() & Qt::LeftButton) {
+            applyTextureBrush(event->pos());
+        } else if (event->buttons() & Qt::RightButton) {
+            // Rotar cámara con botón derecho
+            rotationY += dx * 0.2f;
+            rotationX += dy * 0.2f;
+        }
+    } else {
+        // Modo cámara normal
+        if (event->buttons() & Qt::LeftButton) {
+            rotationY += dx * 0.5f;
+            rotationX += dy * 0.5f;
+        }
     }
 
     lastMousePos = event->pos();
+    update();  // CRÍTICO: Esto redibuja el widget incluyendo el cursor
 }
 
 void OpenGLWidget::wheelEvent(QWheelEvent *event)
@@ -618,7 +605,6 @@ void OpenGLWidget::keyPressEvent(QKeyEvent *event)
 
     update();
 }
-
 void OpenGLWidget::setHeightMapData(const std::vector<std::vector<unsigned char>>& data)
 {
     qDebug() << "setHeightMapData called";
@@ -628,18 +614,293 @@ void OpenGLWidget::setHeightMapData(const std::vector<std::vector<unsigned char>
         return;
     }
 
+    qDebug() << "Copying heightMapData...";
     heightMapData = data;
     mapHeight = data.size();
     mapWidth = data[0].size();
 
     qDebug() << "Map dimensions:" << mapWidth << "x" << mapHeight;
 
-    // Solo generar mallas si OpenGL ya está inicializado
+    qDebug() << "Checking OpenGL context...";
     if (context() && context()->isValid()) {
+        qDebug() << "Calling generateMesh()...";
         generateMesh();
+        qDebug() << "generateMesh() completed";
+
+        qDebug() << "Calling generateWaterMesh()...";
         generateWaterMesh();
+        qDebug() << "generateWaterMesh() completed";
+
+        qDebug() << "Calling update()...";
         update();
+        qDebug() << "update() completed";
     } else {
         qDebug() << "OpenGL not ready yet, deferring mesh generation";
     }
+
+    qDebug() << "setHeightMapData finished successfully";
+}
+
+// NUEVOS MÉTODOS PARA PINTURA DE TEXTURAS
+void OpenGLWidget::setTexturePaintMode(bool enabled)
+{
+    qDebug() << "setTexturePaintMode called with:" << enabled;
+    texturePaintMode = enabled;
+
+    // Inicializar colorMap si no existe
+    if (enabled && colorMap.empty() && mapWidth > 0 && mapHeight > 0) {
+        qDebug() << "Initializing colorMap with dimensions:" << mapWidth << "x" << mapHeight;
+        colorMap.assign(mapHeight, std::vector<QColor>(mapWidth, QColor(Qt::transparent)));
+    }
+
+    qDebug() << "setTexturePaintMode completed successfully";
+}
+
+void OpenGLWidget::setCurrentTexture(int index)
+{
+    currentTextureIndex = index;
+    qDebug() << "Current texture index set to:" << index;
+}
+
+void OpenGLWidget::setTextureBrushSize(int size)
+{
+    textureBrushSize = size;
+    qDebug() << "Texture brush size set to:" << size;
+}
+
+void OpenGLWidget::applyTextureBrush(const QPoint &screenPos)
+{
+    // Validar que el clic está dentro del widget
+    if (screenPos.x() < 0 || screenPos.x() >= width() ||
+        screenPos.y() < 0 || screenPos.y() >= height()) {
+        qDebug() << "Click outside widget bounds:" << screenPos;
+        return;
+    }
+
+    if (colorMap.empty() || heightMapData.empty()) {
+        qDebug() << "Cannot paint: colorMap or heightMapData empty";
+        return;
+    }
+
+    // Convertir coordenadas de pantalla a coordenadas del mapa
+    // Usar la matriz MVP inversa para obtener coordenadas del mundo
+    QMatrix4x4 mvp = projection * view * model;
+    QMatrix4x4 mvpInverse = mvp.inverted();
+
+    // Normalizar coordenadas de pantalla a [-1, 1]
+    float normalizedX = (2.0f * screenPos.x()) / width() - 1.0f;
+    float normalizedY = 1.0f - (2.0f * screenPos.y()) / height();
+
+    // Proyectar al espacio del mundo (asumiendo Y=0 para el plano del terreno)
+    QVector4D nearPoint(normalizedX, normalizedY, -1.0f, 1.0f);
+    QVector4D farPoint(normalizedX, normalizedY, 1.0f, 1.0f);
+
+    QVector4D nearWorld = mvpInverse * nearPoint;
+    QVector4D farWorld = mvpInverse * farPoint;
+
+    nearWorld /= nearWorld.w();
+    farWorld /= farWorld.w();
+
+    // Calcular intersección con el plano Y=0 (aproximación)
+    float t = -nearWorld.y() / (farWorld.y() - nearWorld.y());
+    float worldX = nearWorld.x() + t * (farWorld.x() - nearWorld.x());
+    float worldZ = nearWorld.z() + t * (farWorld.z() - nearWorld.z());
+
+    // Convertir de coordenadas del mundo a coordenadas del mapa
+    // Recordar que el modelo está centrado con translate(-mapWidth/2, 0, -mapHeight/2)
+    int mapX = static_cast<int>(worldX + mapWidth / 2.0f);
+    int mapZ = static_cast<int>(worldZ + mapHeight / 2.0f);
+
+    qDebug() << "Screen:" << screenPos << "-> World:" << worldX << worldZ
+             << "-> Map:" << mapX << mapZ;
+
+    // VALIDACIÓN CRÍTICA: Verificar límites ANTES de pintar
+    if (mapX < 0 || mapX >= mapWidth || mapZ < 0 || mapZ >= mapHeight) {
+        qDebug() << "Map coordinates out of bounds:" << mapX << mapZ
+                 << "(map size:" << mapWidth << "x" << mapHeight << ")";
+        return;
+    }
+
+    // Aplicar pincel con el color actual
+    int brushRadius = textureBrushSize;
+    int pixelsModified = 0;
+
+    for (int dy = -brushRadius; dy <= brushRadius; ++dy) {
+        for (int dx = -brushRadius; dx <= brushRadius; ++dx) {
+            int x = mapX + dx;
+            int z = mapZ + dy;
+
+            // Verificar límites para cada píxel
+            if (x >= 0 && x < mapWidth && z >= 0 && z < mapHeight) {
+                float dist = std::sqrt(dx * dx + dy * dy);
+                if (dist <= brushRadius) {
+                    colorMap[z][x] = currentPaintColor;
+                    pixelsModified++;
+                }
+            }
+        }
+    }
+
+    qDebug() << "Modified" << pixelsModified << "pixels at map coords:" << mapX << "," << mapZ;
+
+    // Regenerar malla para ver los cambios
+    generateMesh();
+    update();
+}
+void OpenGLWidget::paintEvent(QPaintEvent *event)
+{
+    // Primero renderizar OpenGL
+    QOpenGLWidget::paintEvent(event);
+
+    // Luego dibujar el cursor encima con QPainter
+    if (showBrushCursor && texturePaintMode) {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+
+        // Calcular radio del cursor en pantalla
+        int screenRadius = textureBrushSize;
+
+        // Dibujar círculo del pincel
+        QPen pen(Qt::white);
+        pen.setWidth(2);
+        pen.setStyle(Qt::DashLine);
+        painter.setPen(pen);
+        painter.setBrush(Qt::NoBrush);
+        painter.drawEllipse(currentMousePos, screenRadius, screenRadius);
+
+        // Dibujar cruz central para precisión
+        painter.setPen(QPen(Qt::white, 1));
+        painter.drawLine(currentMousePos.x() - 5, currentMousePos.y(),
+                         currentMousePos.x() + 5, currentMousePos.y());
+        painter.drawLine(currentMousePos.x(), currentMousePos.y() - 5,
+                         currentMousePos.x(), currentMousePos.y() + 5);
+    }
+}
+
+void OpenGLWidget::leaveEvent(QEvent *event)
+{
+    showBrushCursor = false;
+    update();
+    QOpenGLWidget::leaveEvent(event);
+}
+
+void OpenGLWidget::paintGL()
+{
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+    if (vertices.empty() || indices.empty()) {
+        return;
+    }
+
+    // Configurar matrices de transformación
+    view.setToIdentity();
+    view.translate(0.0f, -50.0f + cameraY, -zoom);
+    view.rotate(rotationX, 1.0f, 0.0f, 0.0f);
+    view.rotate(rotationY, 0.0f, 1.0f, 0.0f);
+    view.translate(-cameraX, 0.0f, -cameraZ);
+
+    model.setToIdentity();
+    model.translate(-mapWidth / 2.0f, 0.0f, -mapHeight / 2.0f);
+
+    QMatrix4x4 mvp = projection * view * model;
+
+    // RENDERIZAR TERRENO CON SHADER
+    terrainShader->bind();
+    terrainShader->setUniformValue("mvpMatrix", mvp);
+    terrainShader->setUniformValue("useTexture", useTexture);
+
+    if (useTexture && terrainTexture) {
+        terrainTexture->bind(0);
+        terrainShader->setUniformValue("textureSampler", 0);
+    }
+
+    terrainVAO->bind();
+    glDrawElements(GL_TRIANGLES, indices.size(), GL_UNSIGNED_INT, 0);
+    terrainVAO->release();
+
+    if (useTexture && terrainTexture) {
+        terrainTexture->release();
+    }
+    terrainShader->release();
+
+    // RENDERIZAR AGUA CON SHADER
+    if (showWater && !waterVertices.empty() && !waterIndices.empty()) {
+        glDisable(GL_CULL_FACE);
+
+        waterShader->bind();
+        waterShader->setUniformValue("mvpMatrix", mvp);
+        waterShader->setUniformValue("waterAlpha", waterAlpha);
+
+        // AGREGAR: Configurar textura del agua si existe
+        if (useWaterTexture && waterTexture) {
+            waterShader->setUniformValue("useWaterTexture", true);
+            waterShader->setUniformValue("waterTextureSampler", 0);
+            glActiveTexture(GL_TEXTURE0);
+            waterTexture->bind();
+        } else {
+            waterShader->setUniformValue("useWaterTexture", false);
+        }
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+
+        waterVAO->bind();
+        glDrawElements(GL_TRIANGLES, waterIndices.size(), GL_UNSIGNED_INT, 0);
+        waterVAO->release();
+
+        glDepthMask(GL_TRUE);
+
+        // Liberar textura si se usó
+        if (useWaterTexture && waterTexture) {
+            waterTexture->release();
+        }
+
+        waterShader->release();
+        glEnable(GL_CULL_FACE);
+    }
+}
+
+void OpenGLWidget::setCurrentPaintColor(const QColor &color)
+{
+    currentPaintColor = color;
+    qDebug() << "Paint color set to:" << color.name();
+}
+
+QVector3D OpenGLWidget::screenToWorld(const QPoint &screenPos)
+{
+    // Normalizar coordenadas de pantalla a NDC (-1 a 1)
+    float x = (2.0f * screenPos.x()) / width() - 1.0f;
+    float y = 1.0f - (2.0f * screenPos.y()) / height();
+
+    // Crear matriz MVP inversa
+    QMatrix4x4 mvp = projection * view * model;
+    QMatrix4x4 invMVP = mvp.inverted();
+
+    // Punto cercano y lejano en espacio de clip
+    QVector4D nearPoint(x, y, -1.0f, 1.0f);
+    QVector4D farPoint(x, y, 1.0f, 1.0f);
+
+    // Transformar a espacio del mundo
+    QVector4D nearWorld = invMVP * nearPoint;
+    QVector4D farWorld = invMVP * farPoint;
+
+    // Dividir por w para obtener coordenadas homogéneas
+    nearWorld /= nearWorld.w();
+    farWorld /= farWorld.w();
+
+    // Calcular dirección del rayo
+    QVector3D rayDir = (farWorld.toVector3D() - nearWorld.toVector3D()).normalized();
+    QVector3D rayOrigin = nearWorld.toVector3D();
+
+    // Intersección con plano Y=0 (aproximación simple)
+    // Si el rayo no intersecta, devolver origen
+    if (qAbs(rayDir.y()) < 0.001f) {
+        return rayOrigin;
+    }
+
+    float t = -rayOrigin.y() / rayDir.y();
+    QVector3D intersection = rayOrigin + rayDir * t;
+
+    return intersection;
 }
