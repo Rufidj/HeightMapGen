@@ -643,9 +643,9 @@ void OpenGLWidget::setHeightMapData(const std::vector<std::vector<unsigned char>
     if (texturePaintMode) {
         qDebug() << "Texture paint mode active, initializing colorMap...";
         colorMap.assign(mapHeight, std::vector<QColor>(mapWidth, QColor(Qt::transparent)));
+        colorMapValid = true;  // AGREGAR ESTA LÍNEA
         qDebug() << "colorMap initialized with dimensions:" << mapWidth << "x" << mapHeight;
     }
-
     qDebug() << "Checking OpenGL context...";
     if (context() && context()->isValid()) {
         qDebug() << "Calling generateMesh()...";
@@ -678,8 +678,7 @@ void OpenGLWidget::setTexturePaintMode(bool enabled)
     }
 
     // CRÍTICO: Verificar si colorMap ya está correctamente inicializado
-    bool colorMapValid = !colorMap.empty() &&
-                         colorMap.size() == static_cast<size_t>(mapHeight);
+    bool colorMapValid = false;
 
     if (colorMapValid && !colorMap[0].empty() &&
         colorMap[0].size() == static_cast<size_t>(mapWidth)) {
@@ -1013,6 +1012,7 @@ void OpenGLWidget::setColorAtPosition(int x, int y, const QColor &color)
             }
 
             qDebug() << "colorMap lazy initialization completed successfully";
+            colorMapValid = true;  // AGREGAR ESTA LÍNEA
         } catch (const std::bad_alloc& e) {
             qDebug() << "ERROR: Failed to allocate colorMap:" << e.what();
             colorMap.clear();

@@ -59,6 +59,8 @@ private:
     int brushHeight = 128;
     double brushIntensity = 0.3;
     bool *isFirstClick = new bool(true);
+    void saveHeightMapTextured(const QString &fileName);
+    void loadHeightMapTextured(const QString &fileName);
 
     // En la sección private de mainwindow.h:
     std::vector<std::vector<int>> textureMap; // Mapa de índices de textura por píxel

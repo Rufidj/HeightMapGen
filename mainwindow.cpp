@@ -30,6 +30,7 @@
 #include <QListWidget>
 #include <QColorDialog>
 #include <QColorSpace>
+#include <QBuffer>
 
 MainWindow::MainWindow(QWidget *parent)
     : QMainWindow(parent)
@@ -1921,6 +1922,11 @@ protected:
         }
     }
 };
+
+// ===========================================
+//   FUNCIONES TEXTURIZADO MAPA
+// ===========================================
+
 void MainWindow::on_pushButtonTexturize_clicked()
 {
     if (mapWidth == 0 || mapHeight == 0) {
@@ -1969,7 +1975,6 @@ void MainWindow::on_pushButtonTexturize_clicked()
 
     QPushButton *btnLoadDirectory = new QPushButton("Cargar Directorio", dialog);
     leftPanel->addWidget(btnLoadDirectory);
-
     QLabel *labelBrushSize = new QLabel("Tamaño del Pincel:", dialog);
     leftPanel->addWidget(labelBrushSize);
 
@@ -1978,14 +1983,13 @@ void MainWindow::on_pushButtonTexturize_clicked()
     sliderTextureBrushSize->setValue(20);
     leftPanel->addWidget(sliderTextureBrushSize);
 
-
     QLabel *labelBrushSizeValue = new QLabel("20", dialog);
     leftPanel->addWidget(labelBrushSizeValue);
 
     QLabel *labelOpacity = new QLabel("Opacidad del Pincel:", dialog);
     leftPanel->addWidget(labelOpacity);
 
-    QSlider *sliderBrushOpacity = new QSlider(Qt::Horizontal, dialog);  // ← SOLO AQUÍ
+    QSlider *sliderBrushOpacity = new QSlider(Qt::Horizontal, dialog);
     sliderBrushOpacity->setRange(0, 100);
     sliderBrushOpacity->setValue(100);
     leftPanel->addWidget(sliderBrushOpacity);
@@ -2005,14 +2009,10 @@ void MainWindow::on_pushButtonTexturize_clicked()
     comboPaintMode->addItem("Borrador");
     leftPanel->addWidget(comboPaintMode);
 
-    // Opacidad del pincel
-
     QSlider *sliderOpacity = new QSlider(Qt::Horizontal, dialog);
     sliderOpacity->setRange(0, 100);
     sliderOpacity->setValue(100);
     leftPanel->addWidget(sliderOpacity);
-
-
     // Botones de Undo/Redo
     QPushButton *btnUndo = new QPushButton("Deshacer", dialog);
     leftPanel->addWidget(btnUndo);
@@ -2026,11 +2026,13 @@ void MainWindow::on_pushButtonTexturize_clicked()
     QPushButton *btnExportOBJ = new QPushButton("Exportar OBJ con Textura", dialog);
     leftPanel->addWidget(btnExportOBJ);
 
-    QPushButton *btnImportOBJ = new QPushButton("Importar OBJ con Textura", dialog);
-    leftPanel->addWidget(btnImportOBJ);
+    QPushButton *btnSaveHMT = new QPushButton("Guardar Proyecto (.hmt)", dialog);
+    leftPanel->addWidget(btnSaveHMT);
+
+    QPushButton *btnLoadHMT = new QPushButton("Cargar Proyecto (.hmt)", dialog);
+    leftPanel->addWidget(btnLoadHMT);
 
     leftPanel->addStretch();
-
     // ===== PANEL DERECHO: VISTAS 2D Y 3D =====
     QVBoxLayout *rightPanel = new QVBoxLayout();
 
@@ -2065,7 +2067,6 @@ void MainWindow::on_pushButtonTexturize_clicked()
 
     mainLayout->addLayout(leftPanel, 1);
     mainLayout->addLayout(rightPanel, 3);
-
     // ===== VARIABLES COMPARTIDAS =====
     QColor *currentColor = new QColor(Qt::red);
     int *brushSize = new int(20);
@@ -2088,7 +2089,6 @@ void MainWindow::on_pushButtonTexturize_clicked()
     // Variables para modo Clonar
     QPoint *cloneSourcePoint = new QPoint(-1, -1);
     bool *cloneSourceSet = new bool(false);
-
     // ===== LAMBDA PARA EXPORTAR OBJ CON TEXTURA =====
     auto exportOBJWithTexture = [=]() {
         QString objFileName = QFileDialog::getSaveFileName(dialog,
@@ -2149,7 +2149,7 @@ void MainWindow::on_pushButtonTexturize_clicked()
         std::vector<std::vector<int>> vertexIndexMap(mapHeight, std::vector<int>(mapWidth, -1));
         int vertexIndex = 1;
 
-        // Escribir vértices y coordenadas UV
+        // Escribir vértices
         for (int y = 0; y < mapHeight; ++y) {
             for (int x = 0; x < mapWidth; ++x) {
                 if (heightMapData[y][x] > HEIGHT_THRESHOLD) {
@@ -2206,169 +2206,6 @@ void MainWindow::on_pushButtonTexturize_clicked()
                                      .arg(mtlFilePath)
                                      .arg(textureFilePath));
     };
-
-    // Lambda para importar OBJ con textura
-    auto importOBJWithTexture = [=]() {
-        QString objFileName = QFileDialog::getOpenFileName(dialog,
-                                                           "Importar OBJ con Textura",
-                                                           "",
-                                                           "OBJ Files (*.obj *.OBJ)");
-        if (objFileName.isEmpty()) return;
-
-        QFile objFile(objFileName);
-        if (!objFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-            QMessageBox::critical(dialog, "Error", "No se pudo abrir el archivo OBJ.");
-            return;
-        }
-
-        // === PASO 1: PARSEAR GEOMETRÍA DEL OBJ ===
-        std::vector<float> vertices_x, vertices_y, vertices_z;
-        QString mtlFileName;
-
-        QTextStream in(&objFile);
-        while (!in.atEnd()) {
-            QString line = in.readLine().trimmed();
-
-            // Leer vértices
-            if (line.startsWith("v ")) {
-                QStringList parts = line.split(' ', Qt::SkipEmptyParts);
-                if (parts.size() >= 4) {
-                    vertices_x.push_back(parts[1].toFloat());
-                    vertices_y.push_back(parts[2].toFloat());
-                    vertices_z.push_back(parts[3].toFloat());
-                }
-            }
-            // Leer referencia al archivo MTL
-            else if (line.startsWith("mtllib ")) {
-                mtlFileName = line.mid(7).trimmed();
-            }
-        }
-        objFile.close();
-
-        if (vertices_x.empty()) {
-            QMessageBox::warning(dialog, "Error", "No se encontraron vértices en el OBJ.");
-            return;
-        }
-
-        // === PASO 2: CONVERTIR GEOMETRÍA A HEIGHTMAP ===
-        // (Igual que on_pushButtonImport3D_clicked)
-
-        float minX = *std::min_element(vertices_x.begin(), vertices_x.end());
-        float maxX = *std::max_element(vertices_x.begin(), vertices_x.end());
-        float minZ = *std::min_element(vertices_z.begin(), vertices_z.end());
-        float maxZ = *std::max_element(vertices_z.begin(), vertices_z.end());
-        float minY = *std::min_element(vertices_y.begin(), vertices_y.end());
-        float maxY = *std::max_element(vertices_y.begin(), vertices_y.end());
-
-        float rangeX = maxX - minX;
-        float rangeZ = maxZ - minZ;
-
-        int targetWidth = static_cast<int>(std::ceil(rangeX));
-        int targetHeight = static_cast<int>(std::ceil(rangeZ));
-
-        if (targetWidth < 16) targetWidth = 16;
-        if (targetHeight < 16) targetHeight = 16;
-        if (targetWidth > 4096) targetWidth = 4096;
-        if (targetHeight > 4096) targetHeight = 4096;
-
-        // Crear nuevo heightmap con las dimensiones calculadas
-        std::vector<std::vector<unsigned char>> newHeightMap(targetHeight,
-                                                             std::vector<unsigned char>(targetWidth, 0));
-
-        // Proyectar vértices al grid 2D
-        for (size_t i = 0; i < vertices_x.size(); ++i) {
-            float normX = (vertices_x[i] - minX) / rangeX;
-            float normZ = (vertices_z[i] - minZ) / rangeZ;
-            float normY = (vertices_y[i] - minY) / (maxY - minY);
-
-            int gridX = static_cast<int>(normX * (targetWidth - 1));
-            int gridZ = static_cast<int>(normZ * (targetHeight - 1));
-
-            if (gridX >= 0 && gridX < targetWidth && gridZ >= 0 && gridZ < targetHeight) {
-                unsigned char heightValue = static_cast<unsigned char>(normY * 255);
-                newHeightMap[gridZ][gridX] = std::max(newHeightMap[gridZ][gridX], heightValue);
-            }
-        }
-
-        // === PASO 3: ACTUALIZAR HEIGHTMAP PRINCIPAL ===
-        // IMPORTANTE: Actualizar las dimensiones y el heightMapData de MainWindow
-        mapWidth = targetWidth;
-        mapHeight = targetHeight;
-        heightMapData = newHeightMap;
-
-        // Actualizar la imagen 2D con el nuevo heightmap
-        paintImage->~QImage();
-        *paintImage = QImage(mapWidth, mapHeight, QImage::Format_RGB32);
-        for (int y = 0; y < mapHeight; ++y) {
-            for (int x = 0; x < mapWidth; ++x) {
-                unsigned char height = heightMapData[y][x];
-                paintImage->setPixel(x, y, qRgb(height, height, height));
-            }
-        }
-
-        // === PASO 4: CARGAR TEXTURA DEL MTL (SI EXISTE) ===
-        if (!mtlFileName.isEmpty()) {
-            QFileInfo objFileInfo(objFileName);
-            QString mtlFilePath = objFileInfo.absolutePath() + "/" + mtlFileName;
-
-            QFile mtlFile(mtlFilePath);
-            if (mtlFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                QTextStream mtlIn(&mtlFile);
-                QString textureFileName;
-
-                while (!mtlIn.atEnd()) {
-                    QString line = mtlIn.readLine().trimmed();
-                    if (line.startsWith("map_Kd ")) {
-                        textureFileName = line.mid(7).trimmed();
-                        break;
-                    }
-                }
-                mtlFile.close();
-
-                if (!textureFileName.isEmpty()) {
-                    QString textureFilePath = objFileInfo.absolutePath() + "/" + textureFileName;
-                    QImage textureImage(textureFilePath);
-
-                    if (!textureImage.isNull()) {
-                        // Redimensionar textura si no coincide con el heightmap
-                        if (textureImage.width() != mapWidth || textureImage.height() != mapHeight) {
-                            textureImage = textureImage.scaled(mapWidth, mapHeight,
-                                                               Qt::IgnoreAspectRatio,
-                                                               Qt::SmoothTransformation);
-                        }
-
-                        // Aplicar textura al paintImage y colorMap
-                        for (int y = 0; y < mapHeight; ++y) {
-                            for (int x = 0; x < mapWidth; ++x) {
-                                QColor color = textureImage.pixelColor(x, y);
-                                paintImage->setPixel(x, y, color.rgb());
-                                glWidget->setColorAtPosition(x, y, color);
-                            }
-                        }
-
-                        QMessageBox::information(dialog, "Éxito",
-                                                 QString("OBJ importado con textura:\n- Dimensiones: %1x%2\n- Textura: %3")
-                                                     .arg(mapWidth).arg(mapHeight).arg(textureFileName));
-                    } else {
-                        QMessageBox::warning(dialog, "Advertencia",
-                                             "Geometría importada, pero no se pudo cargar la textura.");
-                    }
-                }
-            }
-        } else {
-            QMessageBox::information(dialog, "Éxito",
-                                     QString("OBJ importado sin textura:\n- Dimensiones: %1x%2")
-                                         .arg(mapWidth).arg(mapHeight));
-        }
-
-        // === PASO 5: ACTUALIZAR VISTAS ===
-        label2D->setPixmap(QPixmap::fromImage(*paintImage));
-        glWidget->setHeightMapData(heightMapData);
-        glWidget->generateMesh();
-        glWidget->update();
-    };
-
-
     // ===== LAMBDAS DE FUNCIONALIDAD =====
 
     // Lambda para guardar estado en undo stack
@@ -2435,8 +2272,7 @@ void MainWindow::on_pushButtonTexturize_clicked()
         glWidget->update();
 
         qDebug() << "Redo executed. Stack size:" << redoStackTexture->size();
-    };
-
+        };
     // Lambda de relleno con texturas (flood fill)
     auto fillTexture = [=](int startX, int startY, bool isTexture, int textureIndex) {
         if (startX < 0 || startX >= mapWidth || startY < 0 || startY >= mapHeight) return;
@@ -2485,13 +2321,12 @@ void MainWindow::on_pushButtonTexturize_clicked()
         glWidget->generateMesh();
         glWidget->update();
     };
+
     // ===== LAMBDAS DE MODOS DE PINCEL ADICIONALES =====
 
     // Lambda para aplicar pincel de difuminado
     auto applyBlurBrush = [=](int mapX, int mapY) {
         int radius = *brushSize / 2;
-
-        // Crear copia temporal para evitar modificar mientras calculamos promedios
         QImage tempImage = paintImage->copy();
 
         for (int dy = -radius; dy <= radius; ++dy) {
@@ -2502,7 +2337,6 @@ void MainWindow::on_pushButtonTexturize_clicked()
                 if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) {
                     float dist = std::sqrt(dx * dx + dy * dy);
                     if (dist <= radius) {
-                        // Calcular promedio de vecinos (kernel 3x3)
                         int sumR = 0, sumG = 0, sumB = 0;
                         int count = 0;
 
@@ -2522,8 +2356,6 @@ void MainWindow::on_pushButtonTexturize_clicked()
                         }
 
                         QColor avgColor(sumR / count, sumG / count, sumB / count);
-
-                        // Aplicar intensidad basada en distancia y opacidad
                         float intensity = (1.0f - (dist / radius)) * (*brushOpacity / 100.0f);
                         QColor existingColor = tempImage.pixelColor(x, y);
 
@@ -2549,8 +2381,6 @@ void MainWindow::on_pushButtonTexturize_clicked()
         if (!*cloneSourceSet) return;
 
         int radius = *brushSize / 2;
-        int offsetX = mapX - cloneSourcePoint->x();
-        int offsetY = mapY - cloneSourcePoint->y();
 
         for (int dy = -radius; dy <= radius; ++dy) {
             for (int dx = -radius; dx <= radius; ++dx) {
@@ -2560,14 +2390,12 @@ void MainWindow::on_pushButtonTexturize_clicked()
                 if (destX >= 0 && destX < mapWidth && destY >= 0 && destY < mapHeight) {
                     float dist = std::sqrt(dx * dx + dy * dy);
                     if (dist <= radius) {
-                        // Calcular posición de origen
                         int srcX = cloneSourcePoint->x() + dx;
                         int srcY = cloneSourcePoint->y() + dy;
 
                         if (srcX >= 0 && srcX < mapWidth && srcY >= 0 && srcY < mapHeight) {
                             QColor srcColor = paintImage->pixelColor(srcX, srcY);
 
-                            // Aplicar opacidad si es menor a 100%
                             if (*brushOpacity < 100) {
                                 QColor existingColor = paintImage->pixelColor(destX, destY);
                                 float alpha = *brushOpacity / 100.0f;
@@ -2592,7 +2420,7 @@ void MainWindow::on_pushButtonTexturize_clicked()
         glWidget->update();
     };
 
-    // Lambda para aplicar pincel borrador (restaura heightmap original)
+    // Lambda para aplicar pincel borrador
     auto applyEraserBrush = [=](int mapX, int mapY) {
         int radius = *brushSize / 2;
 
@@ -2604,11 +2432,9 @@ void MainWindow::on_pushButtonTexturize_clicked()
                 if (x >= 0 && x < mapWidth && y >= 0 && y < mapHeight) {
                     float dist = std::sqrt(dx * dx + dy * dy);
                     if (dist <= radius) {
-                        // Restaurar color original del heightmap (escala de grises)
                         unsigned char height = heightMapData[y][x];
                         QColor originalColor(height, height, height);
 
-                        // Aplicar opacidad si es menor a 100%
                         if (*brushOpacity < 100) {
                             QColor existingColor = paintImage->pixelColor(x, y);
                             float alpha = *brushOpacity / 100.0f;
@@ -2756,7 +2582,7 @@ void MainWindow::on_pushButtonTexturize_clicked()
         *isFirstClick = true;
         *firstPaint = true;
     };
-    // ===== CONECTAR EVENTOS (ANTES DE dialog->exec()) =====
+    // ===== CONECTAR EVENTOS =====
 
     // Botones de Undo/Redo
     connect(btnUndo, &QPushButton::clicked, undoTexture);
@@ -2777,7 +2603,129 @@ void MainWindow::on_pushButtonTexturize_clicked()
             colorList->setCurrentItem(item);
         }
     });
+    // Guardar proyecto .hmt
+    connect(btnSaveHMT, &QPushButton::clicked, [=]() {
+        QString fileName = QFileDialog::getSaveFileName(dialog,
+                                                        "Guardar Proyecto",
+                                                        "",
+                                                        "HeightMap Textured (*.hmt)");
+        if (fileName.isEmpty()) return;
 
+        if (!fileName.endsWith(".hmt", Qt::CaseInsensitive)) {
+            fileName += ".hmt";
+        }
+
+        QFile file(fileName);
+        if (!file.open(QIODevice::WriteOnly)) {
+            QMessageBox::critical(dialog, "Error", "No se pudo crear el archivo.");
+            return;
+        }
+
+        QDataStream out(&file);
+        out.setByteOrder(QDataStream::LittleEndian);
+
+        // Header
+        out.writeRawData("HMT\0", 4);
+        out << static_cast<quint32>(1);
+        out << static_cast<quint32>(mapWidth);
+        out << static_cast<quint32>(mapHeight);
+
+        // Heightmap
+        for (int y = 0; y < mapHeight; ++y) {
+            for (int x = 0; x < mapWidth; ++x) {
+                out << heightMapData[y][x];
+            }
+        }
+
+        // Textura
+        QByteArray textureData;
+        QBuffer buffer(&textureData);
+        buffer.open(QIODevice::WriteOnly);
+        paintImage->save(&buffer, "PNG");
+        out << textureData;
+
+        file.close();
+        QMessageBox::information(dialog, "Éxito", "Proyecto guardado correctamente.");
+    });
+
+    // Cargar proyecto .hmt
+    connect(btnLoadHMT, &QPushButton::clicked, [=]() {
+        QString fileName = QFileDialog::getOpenFileName(dialog,
+                                                        "Cargar Proyecto",
+                                                        "",
+                                                        "HeightMap Textured (*.hmt)");
+        if (fileName.isEmpty()) return;
+
+        QFile file(fileName);
+        if (!file.open(QIODevice::ReadOnly)) {
+            QMessageBox::critical(dialog, "Error", "No se pudo abrir el archivo.");
+            return;
+        }
+
+        QDataStream in(&file);
+        in.setByteOrder(QDataStream::LittleEndian);
+
+        // Validar header
+        char magic[4];
+        in.readRawData(magic, 4);
+        if (strncmp(magic, "HMT\0", 4) != 0) {
+            QMessageBox::critical(dialog, "Error", "Formato inválido.");
+            return;
+        }
+
+        quint32 version, width, height;
+        in >> version >> width >> height;
+
+        if (width < 16 || height < 16 || width > 4096 || height > 4096) {
+            QMessageBox::warning(dialog, "Error", "Dimensiones inválidas.");
+            return;
+        }
+
+        // Leer heightmap
+        mapWidth = width;
+        mapHeight = height;
+        heightMapData.assign(mapHeight, std::vector<unsigned char>(mapWidth, 0));
+
+        for (int y = 0; y < mapHeight; ++y) {
+            for (int x = 0; x < mapWidth; ++x) {
+                in >> heightMapData[y][x];
+            }
+        }
+
+        // Leer textura
+        QByteArray textureData;
+        in >> textureData;
+
+        QImage loadedTexture;
+        loadedTexture.loadFromData(textureData, "PNG");
+
+        if (!loadedTexture.isNull()) {
+            *paintImage = loadedTexture;
+            label2D->setPixmap(QPixmap::fromImage(*paintImage));
+            label2D->setFixedSize(mapWidth, mapHeight);
+
+            // Actualizar OpenGL
+            glWidget->setHeightMapData(heightMapData);
+            for (int y = 0; y < mapHeight; ++y) {
+                for (int x = 0; x < mapWidth; ++x) {
+                    glWidget->setColorAtPosition(x, y, paintImage->pixelColor(x, y));
+                }
+            }
+            glWidget->generateMesh();
+            glWidget->update();
+
+            undoStackTexture->clear();
+            redoStackTexture->clear();
+            undoStackTexture->append(paintImage->copy());
+
+            QMessageBox::information(dialog, "Éxito",
+                                     QString("Proyecto cargado: %1x%2").arg(mapWidth).arg(mapHeight));
+        } else {
+            QMessageBox::critical(dialog, "Error", "No se pudo cargar la textura.");
+        }
+
+        file.close();
+    });
     // Cargar textura individual
     connect(btnLoadTexture, &QPushButton::clicked, [colorList, loadedTextures, textureNames, dialog]() {
         QString fileName = QFileDialog::getOpenFileName(dialog,
@@ -2878,9 +2826,6 @@ void MainWindow::on_pushButtonTexturize_clicked()
         }
     });
 
-    // Botón de importación OBJ con textura
-    connect(btnImportOBJ, &QPushButton::clicked, importOBJWithTexture);
-
     // Limpieza de memoria al cerrar el diálogo
     connect(dialog, &QDialog::destroyed, [paintImage, currentColor, brushSize, loadedTextures, textureNames, currentTextureMode, undoStackTexture, redoStackTexture, maxUndoStepsTexture, brushOpacity, firstPaint, cloneSourcePoint, cloneSourceSet]() {
         delete paintImage;
@@ -2905,7 +2850,8 @@ void MainWindow::on_pushButtonTexturize_clicked()
 
     dialog->setLayout(mainLayout);
     dialog->exec();
-}
+}  // <-- LLAVE DE CIERRE DE LA FUNCIÓN
+
 
 QImage MainWindow::generateColorMapImage(const std::vector<std::vector<QColor>>& colorMap)
 {
@@ -2933,3 +2879,201 @@ QImage MainWindow::generateColorMapImage(const std::vector<std::vector<QColor>>&
 
     return image;
 }
+
+void MainWindow::saveHeightMapTextured(const QString &fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::WriteOnly)) {
+        QMessageBox::critical(this, "Error", "No se pudo crear el archivo.");
+        return;
+    }
+
+    QDataStream out(&file);
+    out.setByteOrder(QDataStream::LittleEndian);
+
+    // === ESCRIBIR HEADER CON METADATOS ===
+    // Magic number (4 bytes)
+    out.writeRawData("HMT\0", 4);
+
+    // Version (4 bytes)
+    out << static_cast<quint32>(1);
+
+    // Dimensiones (8 bytes)
+    out << static_cast<quint32>(mapWidth);
+    out << static_cast<quint32>(mapHeight);
+
+    // Timestamp (8 bytes) - fecha de creación
+    out << static_cast<quint64>(QDateTime::currentSecsSinceEpoch());
+
+    // Author (32 bytes, rellenado con \0)
+    QString author = qgetenv("USER");
+    if (author.isEmpty()) author = "Unknown";
+    QByteArray authorBytes = author.toUtf8().leftJustified(32, '\0', true);
+    out.writeRawData(authorBytes.constData(), 32);
+
+    // Description (8 bytes)
+    QByteArray desc = "HMT File";
+    out.writeRawData(desc.leftJustified(8, '\0', true).constData(), 8);
+
+    // Reserved (4 bytes) - para futuras extensiones
+    out.writeRawData("\0\0\0\0", 4);
+
+    // === ESCRIBIR HEIGHTMAP DATA ===
+    for (int y = 0; y < mapHeight; ++y) {
+        for (int x = 0; x < mapWidth; ++x) {
+            out << heightMapData[y][x];
+        }
+    }
+
+    // === ESCRIBIR TEXTURE DATA ===
+    // Serializar la textura como PNG en memoria
+    QByteArray textureData;
+    QBuffer buffer(&textureData);
+    buffer.open(QIODevice::WriteOnly);
+    currentImage.save(&buffer, "PNG");
+
+    // Escribir el PNG comprimido al archivo
+    out << textureData;
+
+    file.close();
+
+    QMessageBox::information(this, "Éxito",
+                             QString("Archivo HMT guardado correctamente:\n"
+                                     "- Ruta: %1\n"
+                                     "- Dimensiones: %2x%3\n"
+                                     "- Autor: %4")
+                                 .arg(fileName)
+                                 .arg(mapWidth).arg(mapHeight)
+                                 .arg(author));
+}
+
+void MainWindow::loadHeightMapTextured(const QString &fileName)
+{
+    QFile file(fileName);
+    if (!file.open(QIODevice::ReadOnly)) {
+        QMessageBox::critical(this, "Error", "No se pudo abrir el archivo.");
+        return;
+    }
+
+    QDataStream in(&file);
+    in.setByteOrder(QDataStream::LittleEndian);
+
+    // === PASO 1: LEER Y VALIDAR HEADER ===
+    char magic[4];
+    in.readRawData(magic, 4);
+    if (strncmp(magic, "HMT\0", 4) != 0) {
+        QMessageBox::critical(this, "Error", "Formato de archivo inválido.");
+        file.close();
+        return;
+    }
+
+    // === PASO 2: LEER METADATOS ===
+    quint32 version, width, height;
+    quint64 timestamp;
+    char author[32], description[8], reserved[4];
+
+    in >> version >> width >> height;
+    in >> timestamp;
+    in.readRawData(author, 32);
+    in.readRawData(description, 8);
+    in.readRawData(reserved, 4);
+
+    // Validar dimensiones
+    if (width < 16 || height < 16 || width > 4096 || height > 4096) {
+        QMessageBox::warning(this, "Error", "Dimensiones inválidas en el archivo.");
+        file.close();
+        return;
+    }
+
+    // Mostrar metadatos en consola (opcional)
+    qDebug() << "Archivo HMT cargado:";
+    qDebug() << "  Versión:" << version;
+    qDebug() << "  Dimensiones:" << width << "x" << height;
+    qDebug() << "  Autor:" << QString::fromUtf8(author, 32).trimmed();
+    qDebug() << "  Fecha:" << QDateTime::fromSecsSinceEpoch(timestamp).toString();
+
+    // === PASO 3: LEER HEIGHTMAP DATA ===
+    mapWidth = width;
+    mapHeight = height;
+    heightMapData.assign(mapHeight, std::vector<unsigned char>(mapWidth, 0));
+
+    for (int y = 0; y < mapHeight; ++y) {
+        for (int x = 0; x < mapWidth; ++x) {
+            in >> heightMapData[y][x];
+        }
+    }
+
+    // === PASO 4: LEER TEXTURE DATA ===
+    QByteArray textureData;
+    in >> textureData;
+
+    currentImage.loadFromData(textureData, "PNG");
+    if (currentImage.isNull()) {
+        QMessageBox::warning(this, "Advertencia",
+                             "Heightmap cargado pero la textura está corrupta. Se usará escala de grises.");
+        // Generar imagen en escala de grises como fallback
+        currentImage = QImage(mapWidth, mapHeight, QImage::Format_RGB32);
+        for (int y = 0; y < mapHeight; ++y) {
+            for (int x = 0; x < mapWidth; ++x) {
+                unsigned char height = heightMapData[y][x];
+                currentImage.setPixel(x, y, qRgb(height, height, height));
+            }
+        }
+    }
+
+    file.close();
+
+    // === PASO 5: ACTUALIZAR UI ===
+    if (dynamicImageLabel) {
+        delete dynamicImageLabel;
+        dynamicImageLabel = nullptr;
+    }
+
+    dynamicImageLabel = new QLabel(ui->scrollAreaDisplay);
+    dynamicImageLabel->setFixedSize(mapWidth, mapHeight);
+    ui->scrollAreaDisplay->setWidget(dynamicImageLabel);
+
+    // Ajustar ventana
+    QScreen *screen = QGuiApplication::primaryScreen();
+    QRect screenGeometry = screen->availableGeometry();
+
+    const int CONTROL_PANEL_WIDTH = 173;
+    const int HORIZONTAL_FRAME_MARGIN = 50;
+    const int VERTICAL_FRAME_MARGIN = 150;
+
+    int maxScrollWidth = screenGeometry.width() - CONTROL_PANEL_WIDTH - HORIZONTAL_FRAME_MARGIN;
+    int maxScrollHeight = screenGeometry.height() - VERTICAL_FRAME_MARGIN;
+
+    int scrollAreaWidth = std::min(mapWidth, maxScrollWidth);
+    int scrollAreaHeight = std::min(mapHeight, maxScrollHeight);
+
+    ui->scrollAreaDisplay->setGeometry(180, 20, scrollAreaWidth, scrollAreaHeight);
+
+    int requiredWidth = 180 + scrollAreaWidth + 20;
+    int requiredHeight = 20 + scrollAreaHeight + 50;
+
+    requiredWidth = std::max(requiredWidth, originalWindowWidth);
+    requiredHeight = std::max(requiredHeight, originalWindowHeight);
+
+    this->setFixedSize(QSize(requiredWidth, requiredHeight));
+
+    // === PASO 6: LIMPIAR HISTORIAL ===
+    undoStack.clear();
+    redoStack.clear();
+
+    // === PASO 7: ACTUALIZAR DISPLAY ===
+    updateHeightmapDisplay();
+
+    QString authorStr = QString::fromUtf8(author, 32).trimmed();
+    QString dateStr = QDateTime::fromSecsSinceEpoch(timestamp).toString("dd/MM/yyyy HH:mm");
+
+    QMessageBox::information(this, "Éxito",
+                             QString("Archivo HMT cargado correctamente:\n"
+                                     "- Dimensiones: %1x%2\n"
+                                     "- Autor: %3\n"
+                                     "- Fecha de creación: %4")
+                                 .arg(mapWidth).arg(mapHeight)
+                                 .arg(authorStr.isEmpty() ? "Desconocido" : authorStr)
+                                 .arg(dateStr));
+}
+
